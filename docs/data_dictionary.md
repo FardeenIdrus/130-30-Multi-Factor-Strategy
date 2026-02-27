@@ -189,7 +189,7 @@ $$
 - Earnings stability:
 
 $$
-\mathrm{EVAR}_{i,t} = \mathrm{SD}\!\left(\Delta\mathrm{EPS}_{i,t-4:t}\right)
+\mathrm{EVAR}_{i,t} = \mathrm{Std}\left(\Delta\mathrm{EPS}_{i,t-4:t}\right)
 $$
 
 - Standardization:
@@ -201,7 +201,7 @@ $$
 - Composite quality score (higher ROE/ROA preferred, lower LEV/EVAR preferred):
 
 $$
-\mathrm{Quality\ Score}_{i,t} = \frac{Z_{\mathrm{ROE},i,t} + Z_{\mathrm{ROA},i,t} - Z_{\mathrm{LEV},i,t} - Z_{\mathrm{EVAR},i,t}}{4}
+\mathrm{Quality\ Score}_{i,t} = \frac{Z_{\mathrm{ROE},i,t}- Z_{\mathrm{LEV},i,t} - Z_{\mathrm{EVAR},i,t}}{3}
 $$
 
 - Dependencies: net income, total assets, equity, debt, and at least 5 years of EPS history

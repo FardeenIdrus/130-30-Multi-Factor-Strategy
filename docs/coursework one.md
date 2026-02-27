@@ -157,7 +157,7 @@ Lower values are preferred, indicating lower financial risk.
 Earnings Variability
 Standard deviation of Year-on-Year EPS growth over the last five fiscal years.
 $$
-\mathrm{EVAR}_{i,t} = \mathrm{SD}\!\left(\Delta \mathrm{EPS}_{i,t-4:t}\right)
+\mathrm{EVAR}_{i,t} = \mathrm{Std}\!\left(\Delta \mathrm{EPS}_{i,t-4:t}\right)
 $$
 
 Lower variability indicates more stable and predictable earnings.
@@ -195,7 +195,7 @@ For leverage and earnings variability (where lower values are preferred), the Z-
 The final composed Quality score is calculated as the average of the standardized component scores:
 
 $$
-\mathrm{Quality\ Score}_i = \frac{Z_{\mathrm{ROE},i} + Z_{\mathrm{ROA},i} - Z_{\mathrm{LEV},i} - Z_{\mathrm{EVAR},i}}{4}
+\mathrm{Quality\ Score}_i = \frac{Z_{\mathrm{ROE},i}- Z_{\mathrm{LEV},i} - Z_{\mathrm{EVAR},i}}{3}
 $$
 
 ### 1.3 Momentum Factor
@@ -297,23 +297,25 @@ where Pi,t is the adjusted closing price of stock i at time t, adjusted prices a
 
 Step 2: Daily and Quarterly Historical Volatility
 
-σdaily = Std(ri,t)
+$\sigma_{\mathrm{daily}} = \mathrm{Std}(r_{i,t})$, rolling window = 63 trading days.
 
-Where the rolling window is 63 days.
-
-σi,3m = √63 σdaily
+$$
+\sigma_{i,3m,t} = \sqrt{63}\,\sigma_{\mathrm{daily}}
+$$
 
 63 is the approximate number of trading days in 3 months. This shorter-term measure captures recent changes in risk and allows the model to detect volatility regime shifts.
 
 (2) Annual Historical Volatility
 
-ri,t = ln(Pi,t/Pi,t-1)
+$$
+r_{i,t} = \ln\!\left(\frac{P_{i,t}}{P_{i,t-1}}\right)
+$$
 
-σdaily = Std(ri,t)
+$\sigma_{\mathrm{daily}} = \mathrm{Std}(r_{i,t})$, rolling window = 252 trading days.
 
-Where the rolling window is 252 days.
-
-σi,12m = √252 σdaily
+$$
+\sigma_{i,12m,t} = \sqrt{252}\,\sigma_{\mathrm{daily}}
+$$
 
 252 is the approximate number of trading days in one year. This measure captures medium-term risk exposure and is the primary signal used in portfolio construction.
 
