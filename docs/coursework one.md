@@ -132,11 +132,13 @@ Required raw data fields:
 (1) Profitability
 
 Return on Equity (ROE)
+
 $$
 \mathrm{ROE}_{i,t} = \frac{\mathrm{Net\ Income}_{i,t}}{\mathrm{Average\ Equity}_{i,t}}
 $$
 
 Return on Assets (ROA)
+
 $$
 \mathrm{ROA}_{i,t} = \frac{\mathrm{Net\ Income}_{i,t}}{\mathrm{Average\ Total\ Assets}_{i,t}}
 $$
@@ -146,6 +148,7 @@ Higher values indicate stronger profitability.
 (2) Leverage
 
 Total debt /Equity (Book value)
+
 $$
 \mathrm{LEV}_{i,t} = \frac{\mathrm{Total\ Debt}_{i,t}}{\mathrm{Book\ Equity}_{i,t}}
 $$
@@ -156,6 +159,7 @@ Lower values are preferred, indicating lower financial risk.
 
 Earnings Variability
 Standard deviation of Year-on-Year EPS growth over the last five fiscal years.
+
 $$
 \mathrm{EVAR}_{i,t} = \mathrm{Std}\!\left(\Delta \mathrm{EPS}_{i,t-4:t}\right)
 $$
