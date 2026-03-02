@@ -13,6 +13,8 @@ from minio import Minio
 from minio.error import S3Error
 from pymongo import MongoClient
 from sqlalchemy import create_engine, text
+import re
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +105,21 @@ class PostgresConnection:
         except Exception as e:
             logger.error("PostgreSQL connection test failed: %s", e)
             return False
+
+    def execute_sql_file(self, sql_path: str):
+        path = Path(sql_path)
+        sql = path.read_text(encoding="utf-8")
+
+        # Remove comments and split into statements
+        sql = re.sub(r"(?m)^\s*--.*$", "", sql).strip()
+        statements = [s.strip() for s in sql.split(";") if s.strip()]
+
+        with self.engine.connect() as conn:
+            for stmt in statements:
+                conn.execute(text(stmt))
+            conn.commit()
+
+        logger.info("Executed SQL file: %s (%d statements)", sql_path, len(statements))
 
 
 class MongoConnection:
