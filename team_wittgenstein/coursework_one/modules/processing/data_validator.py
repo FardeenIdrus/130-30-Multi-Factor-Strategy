@@ -119,15 +119,23 @@ class DataValidator:
         result.stats["total_rows"] = total_rows
         result.stats["unique_symbols"] = symbols
 
-        # Check for negative or zero close prices
-        price_cols = ["open_price", "high_price", "low_price", "close_price"]
-        for col in price_cols:
+        # Check for negative or zero prices
+        for col in ["open_price", "high_price", "low_price"]:
             if col in df.columns:
                 bad = (df[col] <= 0).sum()
                 if bad > 0:
-                    result.add_warning(
-                        f"{bad} rows have {col} <= 0"
-                    )
+                    result.add_warning(f"{bad} rows have {col} <= 0")
+
+        # close_price: error if >1% of rows are zero/negative
+        if "close_price" in df.columns:
+            bad_close = (df["close_price"] <= 0).sum()
+            if bad_close > 0.01 * total_rows:
+                result.add_error(
+                    f"{bad_close} rows have close_price <= 0 "
+                    f"({bad_close / total_rows:.1%} of data)"
+                )
+            elif bad_close > 0:
+                result.add_warning(f"{bad_close} rows have close_price <= 0")
 
         # Check date range
         if "trade_date" in df.columns:
@@ -184,9 +192,9 @@ class DataValidator:
                     f"{len(missing)} expected symbols missing "
                     f"({coverage:.1%} coverage)"
                 )
-            if coverage < 0.8:
+            if coverage < 0.95:
                 result.add_error(
-                    f"Symbol coverage is {coverage:.1%}, below 80% threshold"
+                    f"Symbol coverage is {coverage:.1%}, below 95% threshold"
                 )
 
         return result
