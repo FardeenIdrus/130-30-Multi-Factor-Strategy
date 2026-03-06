@@ -110,6 +110,13 @@ def main():
 
     logger.info("Universe loaded: %d symbols | %d countries", len(symbols), len(countries))
 
+    # Dev mode: slice symbol list to avoid hitting API rate limits
+    dev_cfg = cfg.get("dev", {})
+    if dev_cfg.get("enabled", False):
+        max_sym = dev_cfg.get("max_symbols", 10)
+        symbols = symbols[:max_sym]
+        logger.warning("DEV MODE: limited to %d symbols", max_sym)
+
     # ---- Fetch -------------------------------------------------------
     fetcher = DataFetcher(minio)
 
@@ -126,7 +133,27 @@ def main():
     if rates_df is not None and not rates_df.empty:
         writer.log_fetch_to_mongo("rates", "all", rates_df)
 
-    # ---- Validate ----------------------------------------------------
+    # Log symbols that returned no data, classified as delisted vs fetch error
+    if fetcher.price_failures:
+        writer.log_fetch_to_mongo(
+            "price_failures", "classification", fetcher.price_failures
+        )
+        logger.warning(
+            "Prices: %d delisted, %d fetch errors",
+            len(fetcher.price_failures.get("delisted", [])),
+            len(fetcher.price_failures.get("fetch_error", [])),
+        )
+    if fetcher.fundamentals_failures:
+        writer.log_fetch_to_mongo(
+            "fundamentals_failures", "classification", fetcher.fundamentals_failures
+        )
+        logger.warning(
+            "Fundamentals: %d delisted, %d fetch errors",
+            len(fetcher.fundamentals_failures.get("delisted", [])),
+            len(fetcher.fundamentals_failures.get("fetch_error", [])),
+        )
+
+    # ---- Clean + Validate --------------------------------------------
     vcfg = cfg.get("validation", {})
     validator = DataValidator(
         min_price_rows=vcfg.get("min_price_rows", 200),
@@ -134,11 +161,24 @@ def main():
         max_null_pct=vcfg.get("max_null_pct", 0.5),
     )
 
+    # Strip bad price rows before validation (zero/negative close prices)
+    # MongoDB already has the raw fetch above; PostgreSQL gets clean data only
+    prices_df = validator.clean_prices(prices_df)
+
+    # Exclude confirmed delisted symbols from coverage check — missing
+    # data for delisted companies is expected, not a pipeline failure
+    delisted = set(fetcher.price_failures.get("delisted", []))
+    expected_for_validation = [s for s in symbols if s not in delisted]
+    if delisted:
+        logger.info(
+            "Excluding %d delisted symbols from coverage check", len(delisted)
+        )
+
     results = validator.validate_all(
         prices_df,
         fin_df,
         rates_df,
-        expected_symbols=symbols,
+        expected_symbols=expected_for_validation,
         expected_countries=countries,
     )
     print_validation_report(results)
