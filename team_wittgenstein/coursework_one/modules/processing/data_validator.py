@@ -342,6 +342,39 @@ class DataValidator:
 
         return result
 
+    def clean_prices(self, df):
+        """Remove rows with invalid close prices before validation.
+
+        Drops rows where close_price is zero or negative. These are data
+        errors (impossible for a real stock) and should not enter the
+        database. Logs a warning so there is an audit trail of what was
+        dropped.
+
+        Args:
+            df: Price DataFrame with a close_price column.
+
+        Returns:
+            pd.DataFrame: Cleaned DataFrame with bad rows removed.
+        """
+        if df is None or df.empty:
+            return df
+
+        if "close_price" not in df.columns:
+            return df
+
+        before = len(df)
+        df = df[df["close_price"] > 0].copy()
+        dropped = before - len(df)
+
+        if dropped > 0:
+            logger.warning(
+                "clean_prices: dropped %d rows with close_price <= 0 "
+                "(%.1f%% of data)",
+                dropped, dropped / before * 100,
+            )
+
+        return df
+
     def validate_all(self, prices_df, financials_df, rates_df,
                      expected_symbols=None, expected_countries=None):
         """Run all validations and return a combined report.

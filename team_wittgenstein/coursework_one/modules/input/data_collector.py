@@ -80,6 +80,9 @@ class DataFetcher:
         self._av_last_request_ts = 0.0
         self._av_rate_limit_lock = Lock()
         self.minio._ensure_bucket(self.bucket)
+        # Populated after each fetch — keyed by 'delisted' and 'fetch_error'
+        self.price_failures = {}
+        self.fundamentals_failures = {}
 
     # ================================================================
     # CTL file helpers
@@ -300,6 +303,58 @@ class DataFetcher:
             )
 
    
+    # ================================================================
+    # Failure classification
+    # ================================================================
+
+    def _classify_missing(self, symbols):
+        """Classify why symbols returned no data from yfinance.
+
+        For each symbol that produced no rows, checks ticker.info to
+        determine whether the company is genuinely delisted (expected,
+        acceptable) or whether the fetch failed for another reason
+        (network error, rate limit — should be investigated).
+
+        A symbol is classified as delisted if ticker.info is empty or
+        has no regularMarketPrice (no active trading). Otherwise it is
+        classified as a fetch_error (the company exists but data
+        could not be retrieved).
+
+        Args:
+            symbols: List of symbol strings that returned no data.
+
+        Returns:
+            dict with keys:
+                'delisted'    — list of symbols confirmed delisted/invalid
+                'fetch_error' — list of symbols that should have data
+        """
+        delisted = []
+        fetch_error = []
+
+        for symbol in symbols:
+            try:
+                info = yf.Ticker(symbol).info
+                if not info or info.get("regularMarketPrice") is None:
+                    delisted.append(symbol)
+                    logger.info("classify_missing: %s appears delisted", symbol)
+                else:
+                    fetch_error.append(symbol)
+                    logger.warning(
+                        "classify_missing: %s is active but returned no data "
+                        "(possible fetch error)", symbol
+                    )
+            except Exception as e:
+                fetch_error.append(symbol)
+                logger.warning(
+                    "classify_missing: could not check %s: %s", symbol, e
+                )
+
+        logger.info(
+            "Missing symbol classification: %d delisted, %d fetch errors",
+            len(delisted), len(fetch_error),
+        )
+        return {"delisted": delisted, "fetch_error": fetch_error}
+
     # Price data (source: Yahoo Finance)
 
     def fetch_prices(self, symbols, period="5y"):
@@ -342,7 +397,16 @@ class DataFetcher:
         if not cached_dfs:
             return pd.DataFrame()
 
-        return pd.concat(cached_dfs, ignore_index=True)
+        result = pd.concat(cached_dfs, ignore_index=True)
+
+        # Classify symbols that returned no data at all
+        all_symbols = set(s.strip() for s in symbols)
+        returned = set(result["symbol"].unique())
+        missing = all_symbols - returned
+        if missing:
+            self.price_failures = self._classify_missing(list(missing))
+
+        return result
 
     def _batch_download_prices(self, symbols, period):
         """Batch download prices via yfinance and cache per symbol.
@@ -524,7 +588,11 @@ class DataFetcher:
                 target_quarters,
                 source=source,
             )
+        if uncached:
+            fetched, failed = self._parallel_fetch_fundamentals(uncached, max_workers)
             cached_dfs.extend(fetched)
+            if failed:
+                self.fundamentals_failures = self._classify_missing(failed)
 
         if not cached_dfs:
             return pd.DataFrame()
@@ -636,7 +704,7 @@ class DataFetcher:
         if failed:
             logger.warning("Failed symbols (first 20): %s", failed[:20])
 
-        return result_dfs
+        return result_dfs, failed
 
     @staticmethod
     def _normalize_fundamentals_source(source):
@@ -726,8 +794,19 @@ class DataFetcher:
                     self._safe_get(bs, "Total Debt", date_col)
                     or self._safe_get(bs, "Long Term Debt", date_col)
                 ),
-                "book_value_equity": info.get("bookValue"),
-                "shares_outstanding": info.get("sharesOutstanding"),
+                # Use total_equity from the balance sheet as book value —
+                # already quarterly, so correct for historical backtesting
+                "book_value_equity": (
+                    self._safe_get(bs, "Stockholders Equity", date_col)
+                    or self._safe_get(bs, "Total Stockholder Equity", date_col)
+                ),
+                # Shares outstanding: try balance sheet first (quarterly,
+                # historically accurate), fall back to ticker.info snapshot
+                "shares_outstanding": (
+                    self._safe_get(bs, "Ordinary Shares Number", date_col)
+                    or self._safe_get(bs, "Share Issued", date_col)
+                    or info.get("sharesOutstanding")
+                ),
                 "source": "yfinance",
             }
 
@@ -739,6 +818,14 @@ class DataFetcher:
                     self._safe_get(inc, "Basic EPS", date_col)
                     or self._safe_get(inc, "Diluted EPS", date_col)
                 )
+
+                # Derive shares from net_income / eps if balance sheet
+                # didn't have them — gives a quarterly estimate
+                if record["shares_outstanding"] is None:
+                    ni = record.get("net_income")
+                    eps = record.get("eps")
+                    if ni and eps and eps != 0:
+                        record["shares_outstanding"] = abs(ni / eps)
 
             records.append(record)
 

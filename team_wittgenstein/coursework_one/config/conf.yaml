@@ -17,6 +17,18 @@ minio:
 
 data:
   price_period: "5y"
-  fundamentals_workers: 10
+  fundamentals_workers: 3
   target_fundamental_quarters: 20
   fundamentals_source: "yfinance"
+
+validation:
+  min_price_rows: 200
+  min_years: 4
+  max_null_pct: 0.5
+  strict: true
+
+# Dev mode: limit symbols to avoid hitting API rate limits during development.
+# Set enabled: false for a full production run.
+dev:
+  enabled: true
+  max_symbols: 10
