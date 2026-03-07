@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 BUCKET = "wittgenstein-cache"
 ALPHA_VANTAGE_BASE_URL = "https://www.alphavantage.co/query"
+FUNDAMENTALS_PERIODS = {"quarter", "annual"}
 
 # Map country codes (from company_static) to OECD 3-letter codes
 COUNTRY_TO_OECD = {
@@ -231,6 +232,23 @@ class DataFetcher:
             self.bucket, self._parquet_path(data_type, name)
         )
 
+    @staticmethod
+    def _normalize_fundamentals_period(period):
+        """Validate and normalise fundamentals period namespace."""
+        period = (period or "quarter").strip().lower()
+        if period not in FUNDAMENTALS_PERIODS:
+            raise ValueError(
+                f"Invalid fundamentals period '{period}'. "
+                f"Expected one of {sorted(FUNDAMENTALS_PERIODS)}."
+            )
+        return period
+
+    def _fundamentals_cache_name(self, symbol, source, period="quarter"):
+        """Build fundamentals cache key name with source + period namespace."""
+        src = self._normalize_fundamentals_source(source)
+        period = self._normalize_fundamentals_period(period)
+        return f"{period}/{symbol}.{src}"
+
     def mark_loaded(self, data_type, name):
         """Update a CTL file to mark data as loaded into PostgreSQL.
 
@@ -238,12 +256,47 @@ class DataFetcher:
             data_type: Category of data.
             name: Identifier.
         """
-        ctl = self._read_ctl(data_type, name)
-        if ctl:
+        if data_type != "fundamentals":
+            ctl = self._read_ctl(data_type, name)
+            if ctl:
+                ctl["loaded_to_postgres"] = True
+                ctl["loaded_at"] = datetime.utcnow().isoformat()
+                self.minio.upload_json(
+                    self.bucket, self._ctl_path(data_type, name), ctl
+                )
+            return
+
+        # Backward-compatible marking for fundamentals:
+        # - exact source-scoped cache key (e.g. quarter/AAPL.yfinance)
+        # - all source-scoped caches for symbol when caller passes symbol only
+        # - all source-scoped caches for period/symbol when caller passes period
+        # - legacy non-source key (e.g. AAPL)
+        names_to_mark = set()
+        if "." in str(name):
+            names_to_mark.add(name)
+        else:
+            names_to_mark.add(name)
+            scan_prefixes = [f"fundamentals/{name}."]
+            for period in sorted(FUNDAMENTALS_PERIODS):
+                scan_prefixes.append(f"fundamentals/{period}/{name}.")
+
+            for prefix in scan_prefixes:
+                for object_name in self.minio.list_objects(
+                    self.bucket, prefix=prefix
+                ):
+                    if object_name.endswith(".ctl"):
+                        names_to_mark.add(
+                            object_name.split("/", 1)[1].rsplit(".ctl", 1)[0]
+                        )
+
+        for cache_name in names_to_mark:
+            ctl = self._read_ctl(data_type, cache_name)
+            if not ctl:
+                continue
             ctl["loaded_to_postgres"] = True
             ctl["loaded_at"] = datetime.utcnow().isoformat()
             self.minio.upload_json(
-                self.bucket, self._ctl_path(data_type, name), ctl
+                self.bucket, self._ctl_path(data_type, cache_name), ctl
             )
 
    
@@ -384,20 +437,32 @@ class DataFetcher:
         ]
         return df[[c for c in keep if c in df.columns]]
 
-    # Fundamentals (source: Alpha Vantage only)
+    # Fundamentals (source: yfinance primary, Alpha Vantage backup)
 
-    def fetch_fundamentals(self, symbols, max_workers=10, target_quarters=20):
+    def fetch_fundamentals(
+        self,
+        symbols,
+        max_workers=10,
+        target_quarters=20,
+        source="yfinance",
+    ):
         """Fetch quarterly financial statements for all symbols.
 
-        Uses Alpha Vantage only. For each symbol, calls BALANCE_SHEET,
-        INCOME_STATEMENT, and EARNINGS in sequence.
+        Uses configurable source routing:
+        - yfinance (default): yfinance only, returns all available
+          yfinance quarters.
+        - alphavantage: Alpha Vantage only.
+
         Per-symbol parquet files are cached in MinIO.
 
         Args:
             symbols: List of stock ticker symbols.
-            max_workers: Kept for compatibility; fundamentals are fetched
-                sequentially to respect API throttling.
-            target_quarters: Number of recent quarters to keep per symbol.
+            max_workers: Worker count used for yfinance fundamentals
+                parallel fetch. Non-yfinance modes stay sequential.
+            target_quarters: Number of recent quarters to keep per symbol
+                (ignored when source='yfinance').
+            source: Fundamentals data source strategy ('yfinance',
+                or 'alphavantage').
 
         Returns:
             pd.DataFrame: Combined financial data with columns: symbol,
@@ -405,37 +470,44 @@ class DataFetcher:
                 total_equity, total_debt, net_income, eps, book_value_equity,
                 shares_outstanding.
         """
+        source = self._normalize_fundamentals_source(source)
         to_refresh = []
         cached_dfs = []
 
         for symbol in symbols:
             sym = symbol.strip()
-            if self._is_cached("fundamentals", sym):
-                df = self._load_cached("fundamentals", sym)
+            cache_name = self._fundamentals_cache_name(
+                sym, source, period="quarter"
+            )
+            if self._is_cached("fundamentals", cache_name):
+                df = self._load_cached("fundamentals", cache_name)
                 if df is not None:
                     df = self._ensure_fundamentals_schema(df)
                     df = self._dedupe_dataframe("fundamentals", df, name=sym)
-                    source_series = df.get("source", pd.Series(dtype=object))
-                    source_series = source_series.dropna().astype(str).str.lower()
-                    has_non_alpha_source = (
-                        source_series.empty
-                        or source_series.ne("alphavantage").any()
+                    source_series = (
+                        df.get("source", pd.Series(dtype=object))
+                        .dropna()
+                        .astype(str)
+                        .str.lower()
+                    )
+                    has_yfinance_data = source_series.str.contains(
+                        "yfinance", regex=False
+                    ).any()
+                    is_alpha_only = (
+                        not source_series.empty
+                        and source_series.eq("alphavantage").all()
                     )
                     needs_refresh = (
-                        len(df) < target_quarters
-                        or (
-                            bool(self.alpha_vantage_api_key)
-                            and self._has_fundamental_gaps(df)
-                        )
-                        or has_non_alpha_source
+                        (source == "alphavantage" and len(df) < target_quarters)
+                        or (source == "yfinance" and not has_yfinance_data)
+                        or (source == "alphavantage" and not is_alpha_only)
                     )
                     if needs_refresh:
                         to_refresh.append(sym)
                     else:
+                        cached_target = len(df) if source == "yfinance" else target_quarters
                         cached_dfs.append(
-                            df.sort_values("report_date", ascending=False).head(
-                                target_quarters
-                            )
+                            df.sort_values("report_date", ascending=False).head(cached_target)
                         )
                     continue
             to_refresh.append(sym)
@@ -447,7 +519,10 @@ class DataFetcher:
 
         if to_refresh:
             fetched = self._parallel_fetch_fundamentals(
-                to_refresh, max_workers, target_quarters
+                to_refresh,
+                max_workers,
+                target_quarters,
+                source=source,
             )
             cached_dfs.extend(fetched)
 
@@ -459,44 +534,100 @@ class DataFetcher:
         out = self._dedupe_dataframe("fundamentals", out)
         return out
 
-    def _parallel_fetch_fundamentals(self, symbols, max_workers, target_quarters):
-        """Fetch fundamentals sequentially to respect API throttling.
+    def _parallel_fetch_fundamentals(
+        self,
+        symbols,
+        max_workers,
+        target_quarters,
+        source="yfinance",
+    ):
+        """Fetch fundamentals sequentially per source strategy.
 
         Args:
             symbols: Symbols to fetch.
-            max_workers: Unused for fundamentals; kept for compatibility.
+            max_workers: Worker count for yfinance parallel fetch.
             target_quarters: Number of recent quarters to retain.
+            source: Fundamentals data source strategy.
 
         Returns:
             list[pd.DataFrame]
         """
-        logger.info(
-            "Fetching fundamentals for %d symbols sequentially "
-            "(alpha vantage throttle-safe).",
-            len(symbols),
-        )
-
         result_dfs = []
         failed = []
 
-        for symbol in symbols:
-            try:
-                df = self._fetch_single_fundamental(symbol, target_quarters)
-                if df is not None and not df.empty:
-                    df = self._ensure_fundamentals_schema(df)
-                    df = self._dedupe_dataframe("fundamentals", df, name=symbol)
-                    cache_source = ",".join(
-                        sorted(df["source"].dropna().astype(str).unique())
-                    ) or "unknown"
-                    self._cache_dataframe(
-                        "fundamentals", symbol, df, cache_source
+        if source == "yfinance":
+            workers = max(1, int(max_workers or 1))
+            logger.info(
+                "Fetching yfinance fundamentals for %d symbols in parallel "
+                "(workers=%d).",
+                len(symbols),
+                workers,
+            )
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                futures = {
+                    executor.submit(
+                        self._fetch_single_fundamental,
+                        symbol,
+                        target_quarters,
+                        source,
+                    ): symbol
+                    for symbol in symbols
+                }
+                for future in as_completed(futures):
+                    symbol = futures[future]
+                    try:
+                        df = future.result()
+                        if df is not None and not df.empty:
+                            df = self._ensure_fundamentals_schema(df)
+                            df = self._dedupe_dataframe(
+                                "fundamentals", df, name=symbol
+                            )
+                            cache_source = ",".join(
+                                sorted(df["source"].dropna().astype(str).unique())
+                            ) or "unknown"
+                            cache_name = self._fundamentals_cache_name(
+                                symbol, source, period="quarter"
+                            )
+                            self._cache_dataframe(
+                                "fundamentals", cache_name, df, cache_source
+                            )
+                            result_dfs.append(df)
+                        else:
+                            failed.append(symbol)
+                    except Exception as e:
+                        logger.error("Failed fundamentals for %s: %s", symbol, e)
+                        failed.append(symbol)
+        else:
+            logger.info(
+                "Fetching fundamentals for %d symbols sequentially "
+                "(alpha vantage throttle-safe).",
+                len(symbols),
+            )
+            for symbol in symbols:
+                try:
+                    df = self._fetch_single_fundamental(
+                        symbol,
+                        target_quarters=target_quarters,
+                        source=source,
                     )
-                    result_dfs.append(df)
-                else:
+                    if df is not None and not df.empty:
+                        df = self._ensure_fundamentals_schema(df)
+                        df = self._dedupe_dataframe("fundamentals", df, name=symbol)
+                        cache_source = ",".join(
+                            sorted(df["source"].dropna().astype(str).unique())
+                        ) or "unknown"
+                        cache_name = self._fundamentals_cache_name(
+                            symbol, source, period="quarter"
+                        )
+                        self._cache_dataframe(
+                            "fundamentals", cache_name, df, cache_source
+                        )
+                        result_dfs.append(df)
+                    else:
+                        failed.append(symbol)
+                except Exception as e:
+                    logger.error("Failed fundamentals for %s: %s", symbol, e)
                     failed.append(symbol)
-            except Exception as e:
-                logger.error("Failed fundamentals for %s: %s", symbol, e)
-                failed.append(symbol)
 
         logger.info(
             "Fundamentals: %d success, %d failed",
@@ -507,23 +638,59 @@ class DataFetcher:
 
         return result_dfs
 
-    def _fetch_single_fundamental(self, symbol, target_quarters=20):
-        """Fetch one symbol from Alpha Vantage only.
+    @staticmethod
+    def _normalize_fundamentals_source(source):
+        """Validate and normalise fundamentals source parameter."""
+        source = (source or "yfinance").strip().lower()
+        allowed = {"yfinance", "alphavantage"}
+        if source not in allowed:
+            raise ValueError(
+                "Invalid fundamentals source "
+                f"'{source}'. Expected one of {sorted(allowed)}."
+            )
+        return source
+
+    def _fetch_single_fundamental(
+        self, symbol, target_quarters=20, source="yfinance"
+    ):
+        """Fetch one symbol using the requested source strategy.
 
         Args:
             symbol: Stock ticker symbol.
-            target_quarters: Number of recent quarters to return.
+            target_quarters: Number of recent quarters to return
+                (ignored when source='yfinance').
+            source: Fundamentals data source strategy.
 
         Returns:
             pd.DataFrame or None.
         """
-        av_df = self._fetch_alpha_vantage_fundamentals(symbol)
+        source = self._normalize_fundamentals_source(source)
 
-        if av_df is None or av_df.empty:
+        yf_df = pd.DataFrame()
+        av_df = pd.DataFrame()
+
+        if source == "yfinance":
+            yf_df = self._fetch_yfinance_fundamentals(symbol)
+            yf_df = self._ensure_fundamentals_schema(yf_df)
+
+        av_needed = source == "alphavantage"
+
+        if av_needed:
+            av_df = self._fetch_alpha_vantage_fundamentals(symbol)
+            av_df = self._ensure_fundamentals_schema(av_df)
+
+        if source == "alphavantage":
+            df = av_df
+        else:
+            df = yf_df
+
+        if df is None or df.empty:
             return None
 
-        df = self._ensure_fundamentals_schema(av_df)
-        df = df.sort_values("report_date", ascending=False).head(target_quarters)
+        df = self._ensure_fundamentals_schema(df)
+        df = df.sort_values("report_date", ascending=False)
+        if source != "yfinance":
+            df = df.head(target_quarters)
         return df.reset_index(drop=True)
 
     def _fetch_yfinance_fundamentals(self, symbol):
@@ -703,69 +870,6 @@ class DataFetcher:
         df["report_date"] = pd.to_datetime(df["report_date"])
         return df.sort_values("report_date", ascending=False).reset_index(drop=True)
 
-    def _merge_fundamentals_sources(
-        self, symbol, yf_df, av_df, target_quarters=20
-    ):
-        """Blend yfinance (primary) with Alpha Vantage backfill/top-up."""
-        yf_df = self._ensure_fundamentals_schema(yf_df)
-        av_df = self._ensure_fundamentals_schema(av_df)
-
-        if yf_df.empty and av_df.empty:
-            return pd.DataFrame()
-
-        if yf_df.empty:
-            merged = av_df.copy()
-            merged = merged.sort_values("report_date", ascending=False)
-            return merged.head(target_quarters).reset_index(drop=True)
-
-        if av_df.empty:
-            merged = yf_df.copy()
-            merged = merged.sort_values("report_date", ascending=False)
-            return merged.head(target_quarters).reset_index(drop=True)
-
-        key_cols = ["fiscal_year", "fiscal_quarter"]
-        fill_cols = [
-            "report_date",
-            "currency",
-            "total_assets",
-            "total_equity",
-            "total_debt",
-            "book_value_equity",
-            "shares_outstanding",
-            "net_income",
-            "eps",
-        ]
-
-        yf = yf_df.copy().sort_values("report_date", ascending=False)
-        av = av_df.copy().sort_values("report_date", ascending=False)
-
-        yf = yf.drop_duplicates(subset=key_cols, keep="first").set_index(key_cols)
-        av = av.drop_duplicates(subset=key_cols, keep="first").set_index(key_cols)
-        av_aligned = av.reindex(yf.index)
-
-        na_before = yf[fill_cols].isna()
-
-        for col in fill_cols:
-            yf[col] = yf[col].where(yf[col].notna(), av_aligned[col])
-
-        filled_mask = (na_before & yf[fill_cols].notna()).any(axis=1)
-        yf.loc[filled_mask, "source"] = "yfinance+alphavantage"
-        yf.loc[~filled_mask, "source"] = yf.loc[~filled_mask, "source"].fillna(
-            "yfinance"
-        )
-        yf["symbol"] = symbol
-
-        av_only = av.loc[~av.index.isin(yf.index)].copy()
-        if not av_only.empty:
-            av_only["source"] = "alphavantage"
-            av_only["symbol"] = symbol
-
-        combined = pd.concat([yf, av_only], axis=0).reset_index()
-        combined = self._ensure_fundamentals_schema(combined)
-        combined = combined.sort_values("report_date", ascending=False)
-        combined = combined.drop_duplicates(subset=["symbol"] + key_cols, keep="first")
-        return combined.head(target_quarters).reset_index(drop=True)
-
     def _alpha_vantage_get(self, function_name, symbol, max_retries=3):
         """Call Alpha Vantage API with basic retry for rate limits."""
         params = {
@@ -844,21 +948,6 @@ class DataFetcher:
             if parsed is not None:
                 return parsed
         return None
-
-    @staticmethod
-    def _has_fundamental_gaps(df):
-        """Check whether critical financial fields contain nulls."""
-        critical_cols = [
-            "total_assets",
-            "total_equity",
-            "total_debt",
-            "net_income",
-            "eps",
-        ]
-        available = [c for c in critical_cols if c in df.columns]
-        if not available:
-            return True
-        return df[available].isna().any().any()
 
     @staticmethod
     def _ensure_fundamentals_schema(df):

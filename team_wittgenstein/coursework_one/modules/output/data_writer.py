@@ -164,7 +164,9 @@ class DataWriter:
 
         if self.fetcher:
             for symbol in df["symbol"].unique():
-                self.fetcher.mark_loaded("fundamentals", symbol)
+                self.fetcher.mark_loaded(
+                    "fundamentals", f"quarter/{symbol}"
+                )
 
         return new_rows
 

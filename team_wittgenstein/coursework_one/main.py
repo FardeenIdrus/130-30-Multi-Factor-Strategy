@@ -120,6 +120,7 @@ def main():
         target_quarters=cfg.get("data", {}).get(
             "target_fundamental_quarters", 20
         ),
+        source=cfg.get("data", {}).get("fundamentals_source", "yfinance"),
     )
     rates_df = fetcher.fetch_risk_free_rates(countries)
 

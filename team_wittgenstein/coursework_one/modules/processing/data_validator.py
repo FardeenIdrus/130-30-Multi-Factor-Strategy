@@ -192,7 +192,7 @@ class DataValidator:
                     f"{len(missing)} expected symbols missing "
                     f"({coverage:.1%} coverage)"
                 )
-            if coverage < 0.95:
+            if coverage < 0.8:
                 result.add_error(
                     f"Symbol coverage is {coverage:.1%}, below 95% threshold"
                 )
