@@ -455,7 +455,8 @@ class DataFetcher:
 
         if len(symbols) == 1:
             symbol = symbols[0]
-            df = self._reshape_price_df(raw, symbol)
+            currency = self._get_price_currency(symbol)
+            df = self._reshape_price_df(raw, symbol, currency=currency)
             if df is not None and not df.empty:
                 df = self._dedupe_dataframe("prices", df, name=symbol)
                 self._cache_dataframe("prices", symbol, df, "yfinance")
@@ -464,7 +465,10 @@ class DataFetcher:
             for symbol in symbols:
                 try:
                     symbol_data = raw[symbol].dropna(how="all")
-                    df = self._reshape_price_df(symbol_data, symbol)
+                    currency = self._get_price_currency(symbol)
+                    df = self._reshape_price_df(
+                        symbol_data, symbol, currency=currency
+                    )
                     if df is not None and not df.empty:
                         df = self._dedupe_dataframe("prices", df, name=symbol)
                         self._cache_dataframe(
@@ -481,8 +485,29 @@ class DataFetcher:
         logger.info("Cached prices for %d symbols", len(result_dfs))
         return result_dfs
 
+    def _get_price_currency(self, symbol):
+        """Resolve the trading currency for a symbol from yfinance."""
+        try:
+            ticker = yf.Ticker(symbol)
+            fast_info = getattr(ticker, "fast_info", None)
+            currency = None
+            if fast_info is not None:
+                if isinstance(fast_info, dict):
+                    currency = fast_info.get("currency")
+                else:
+                    currency = getattr(fast_info, "currency", None)
+            if not currency:
+                info = getattr(ticker, "info", {}) or {}
+                currency = info.get("currency")
+            if pd.notna(currency):
+                currency = str(currency).strip().upper()
+                return currency[:3] if currency else None
+        except Exception as e:
+            logger.debug("Could not resolve currency for %s: %s", symbol, e)
+        return None
+
     @staticmethod
-    def _reshape_price_df(raw_df, symbol):
+    def _reshape_price_df(raw_df, symbol, currency=None):
         """Transform raw yfinance output into our schema format.
 
         Args:
@@ -513,7 +538,7 @@ class DataFetcher:
         }
         df = df.rename(columns=column_map)
         df["symbol"] = symbol
-        df["currency"] = None
+        df["currency"] = currency
 
         keep = [
             "symbol", "trade_date", "open_price", "high_price",
@@ -1349,8 +1374,9 @@ class DataFetcher:
                 next_col = f"{field}_next"
                 if next_col in result.columns:
                     if field in result.columns:
-                        combined = result[field].combine_first(result[next_col])
-                        result[field] = combined
+                        result[field] = result[field].where(
+                            result[field].notna(), result[next_col]
+                        )
                     else:
                         result[field] = result[next_col]
                     result = result.drop(columns=[next_col])
