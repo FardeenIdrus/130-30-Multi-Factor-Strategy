@@ -209,7 +209,7 @@ class TestValidateFinancials:
             "fiscal_year": list(range(2015, 2025)),
             "fiscal_quarter": [1] * 10,
             "total_assets": [np.nan] * 5 + [1e9] * 5,
-            "total_equity": [1e9] * 10,
+            "book_equity": [1e9] * 10,
             "net_income": [1e8] * 10,
         })
         result = v.validate_financials(df)

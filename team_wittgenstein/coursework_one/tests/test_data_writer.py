@@ -82,7 +82,7 @@ class TestWriteFinancials:
         })
         count = writer.write_financials(df)
         assert count == 1
-        mock_pg_conn.write_dataframe.assert_called_once()
+        mock_pg_conn.write_dataframe_on_conflict_do_nothing.assert_called_once()
 
     def test_skips_duplicates(self, writer, mock_pg_conn):
         df = pd.DataFrame({
@@ -102,7 +102,7 @@ class TestWriteFinancials:
 
     def test_empty_df(self, writer, mock_pg_conn):
         assert writer.write_financials(None) == 0
-        mock_pg_conn.write_dataframe.assert_not_called()
+        mock_pg_conn.write_dataframe_on_conflict_do_nothing.assert_not_called()
 
 
 # ===================================================================

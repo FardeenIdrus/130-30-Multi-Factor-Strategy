@@ -45,7 +45,7 @@ class DataWriter:
         Args:
             df: Price DataFrame with columns: symbol, trade_date,
                 open_price, high_price, low_price, close_price,
-                adjusted_close, volume, source.
+                adjusted_close, currency, volume.
 
         Returns:
             int: Number of new rows written.
@@ -82,6 +82,13 @@ class DataWriter:
             logger.info("Prices: no new rows to write.")
             return 0
 
+        # Strip columns not in the price_data schema before writing
+        schema_cols = [
+            "symbol", "trade_date", "open_price", "high_price",
+            "low_price", "close_price", "adjusted_close", "currency", "volume",
+        ]
+        df = df[[c for c in schema_cols if c in df.columns]]
+
         self.pg.write_dataframe(df, "price_data", SCHEMA)
         logger.info("Prices: wrote %d new rows to PostgreSQL", new_rows)
 
@@ -101,8 +108,8 @@ class DataWriter:
         Args:
             df: Financials DataFrame with columns: symbol, fiscal_year,
                 fiscal_quarter, report_date, currency, total_assets,
-                total_equity, total_debt, book_value_equity,
-                shares_outstanding, net_income, eps, source.
+                total_debt, net_income, book_equity,
+                shares_outstanding, eps.
 
         Returns:
             int: Number of new rows written.
@@ -154,8 +161,16 @@ class DataWriter:
             logger.info("Financials: no new rows to write.")
             return 0
 
+        # Strip columns not in the financial_data schema before writing
+        schema_cols = [
+            "symbol", "report_date", "currency", "total_assets", "total_debt",
+            "net_income", "book_equity", "shares_outstanding", "eps",
+            "fiscal_year", "fiscal_quarter", "source",
+        ]
+        df_write = df[[c for c in schema_cols if c in df.columns]]
+
         self.pg.write_dataframe_on_conflict_do_nothing(
-            df,
+            df_write,
             "financial_data",
             SCHEMA,
             ["symbol", "fiscal_year", "fiscal_quarter"],
@@ -226,7 +241,7 @@ class DataWriter:
 
         Args:
             df: Metrics DataFrame with columns: symbol, calc_date,
-                pb_ratio, asset_growth, roe, roa, leverage,
+                pb_ratio, asset_growth, roe, leverage,
                 earnings_stability, momentum_6m, momentum_12m,
                 volatility_3m, volatility_12m.
 

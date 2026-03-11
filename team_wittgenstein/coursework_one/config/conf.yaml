@@ -18,7 +18,11 @@ minio:
 data:
   price_period: "5y"
   fundamentals_period: "5y"
-  fundamentals_source: "simfin" # options: simfin, alphavantage
+  fundamentals_source: "waterfall" # options: waterfall (EDGAR→SimFin→yfinance→ffill), simfin
+  cache_ttl_days: 7  # Re-fetch cached data older than this many days (remove to disable)
+
+# US-only strategy: only fetch data for US-listed companies
+country_filter: "US"
 
 validation:
   min_price_rows: 200
@@ -30,4 +34,4 @@ validation:
 # Set enabled: false for a full production run.
 dev:
   enabled: true
-  max_symbols: 10
+  max_symbols: 3

@@ -30,8 +30,8 @@ def sample_prices_df():
                 "low_price": 148.0,
                 "close_price": 152.0,
                 "adjusted_close": 152.0,
+                "currency": None,
                 "volume": 1_000_000,
-                "source": "yfinance",
             })
     return pd.DataFrame(rows)
 
@@ -50,13 +50,11 @@ def sample_financials_df():
                     "report_date": pd.Timestamp(f"{yr}-{q * 3:02d}-28"),
                     "currency": "USD",
                     "total_assets": 3e11,
-                    "total_equity": 1e11,
                     "total_debt": 1e11,
-                    "book_value_equity": 1e11,
+                    "book_equity": 1e11,
                     "shares_outstanding": 15_000_000_000,
                     "net_income": 2e10,
                     "eps": 1.30,
-                    "source": "yfinance",
                 })
     return pd.DataFrame(rows)
 

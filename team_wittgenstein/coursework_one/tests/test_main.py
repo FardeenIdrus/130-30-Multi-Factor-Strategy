@@ -85,7 +85,8 @@ class TestMain:
             "mongo": {"host": "h", "port": 27017},
             "minio": {"host": "h", "access_key": "a", "secret_key": "s", "secure": False},
             "logging": {"level": "INFO"},
-            "data": {"price_period": "5y", "fundamentals_workers": 1},
+            "data": {"price_period": "5y", "fundamentals_period": "5y", "fundamentals_source": "waterfall"},
+            "country_filter": "US",
             "validation": {"min_price_rows": 5, "min_years": 1, "max_null_pct": 0.5, "strict": True},
             "dev": {"enabled": True, "max_symbols": 2},
         }

@@ -192,7 +192,7 @@ class DataValidator:
                     f"{len(missing)} expected symbols missing "
                     f"({coverage:.1%} coverage)"
                 )
-            if coverage < 0.8:
+            if coverage < 0.95:
                 result.add_error(
                     f"Symbol coverage is {coverage:.1%}, below 95% threshold"
                 )
@@ -248,7 +248,7 @@ class DataValidator:
             )
 
         # Check null rates on critical columns
-        critical = ["total_assets", "total_equity", "net_income"]
+        critical = ["total_assets", "book_equity", "net_income"]
         for col in critical:
             if col in df.columns:
                 null_pct = df[col].isna().mean()

@@ -71,6 +71,45 @@ class TestPostgresConnection:
         assert pg.test_connection() is False
 
     @patch("modules.db.db_connection.create_engine")
+    def test_write_dataframe_on_conflict_do_nothing(self, mock_create_engine):
+        mock_engine = MagicMock()
+        mock_create_engine.return_value = mock_engine
+
+        pg = PostgresConnection("localhost", 5432, "fift", "user", "pass")
+        df = pd.DataFrame({"symbol": ["AAPL"], "fiscal_year": [2024], "fiscal_quarter": [1]})
+
+        with patch("modules.db.db_connection.Table") as mock_table_cls, \
+             patch("modules.db.db_connection.pg_insert") as mock_pg_insert:
+            mock_stmt = MagicMock()
+            mock_pg_insert.return_value.values.return_value = mock_stmt
+            mock_stmt.on_conflict_do_nothing.return_value = mock_stmt
+
+            mock_conn = MagicMock()
+            mock_engine.begin.return_value.__enter__ = MagicMock(return_value=mock_conn)
+            mock_engine.begin.return_value.__exit__ = MagicMock(return_value=False)
+
+            pg.write_dataframe_on_conflict_do_nothing(
+                df, "financial_data", "team_wittgenstein",
+                ["symbol", "fiscal_year", "fiscal_quarter"],
+            )
+            mock_stmt.on_conflict_do_nothing.assert_called_once()
+            mock_conn.execute.assert_called_once()
+
+    @patch("modules.db.db_connection.create_engine")
+    def test_write_dataframe_on_conflict_empty(self, mock_create_engine):
+        mock_engine = MagicMock()
+        mock_create_engine.return_value = mock_engine
+
+        pg = PostgresConnection("localhost", 5432, "fift", "user", "pass")
+        pg.write_dataframe_on_conflict_do_nothing(
+            None, "financial_data", "team_wittgenstein", ["symbol"],
+        )
+        pg.write_dataframe_on_conflict_do_nothing(
+            pd.DataFrame(), "financial_data", "team_wittgenstein", ["symbol"],
+        )
+        mock_engine.begin.assert_not_called()
+
+    @patch("modules.db.db_connection.create_engine")
     def test_execute(self, mock_create_engine):
         mock_engine = MagicMock()
         mock_create_engine.return_value = mock_engine

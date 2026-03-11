@@ -95,6 +95,19 @@ def main():
         else None
     )
 
+    # Optional country filter (e.g. "US" for US-only strategy)
+    country_filter = cfg.get("country_filter")
+    if country_filter and country_col:
+        before = len(universe)
+        universe = universe[
+            universe[country_col].astype(str).str.strip().str.upper()
+            == country_filter.upper()
+        ]
+        logger.info(
+            "Country filter '%s': %d → %d companies",
+            country_filter, before, len(universe),
+        )
+
     symbols = (
         universe[symbol_col]
         .dropna()
@@ -119,6 +132,7 @@ def main():
 
     # ---- Fetch -------------------------------------------------------
     fetcher = DataFetcher(minio)
+    fetcher.cache_ttl_days = cfg.get("data", {}).get("cache_ttl_days")
 
     prices_df = fetcher.fetch_prices(symbols, period=cfg.get("data", {}).get("price_period", "5y"))
     fin_df = fetcher.fetch_fundamentals(

@@ -40,15 +40,17 @@ DROP TABLE IF EXISTS team_wittgenstein.financial_data CASCADE;
 CREATE TABLE team_wittgenstein.financial_data (
     entry_id            INT             GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     symbol              VARCHAR(12)     NOT NULL,
+    report_date         DATE,
     currency            CHAR(3),
     total_assets        NUMERIC,
     total_debt          NUMERIC,
     net_income          NUMERIC,
     book_equity         NUMERIC,
-    shares_outstanding  INT,
+    shares_outstanding  BIGINT,
     eps                 NUMERIC,
     fiscal_year         INT             NOT NULL,
     fiscal_quarter      INT             NOT NULL,
+    source              VARCHAR(20),
     created_at          TIMESTAMPTZ     DEFAULT NOW(),
     UNIQUE (symbol, fiscal_year, fiscal_quarter)
 );
