@@ -80,9 +80,7 @@ class PostgresConnection:
             if_exists=if_exists,
             index=False,
         )
-        logger.info(
-            "Wrote %d rows to %s.%s", len(df), schema, table_name
-        )
+        logger.info("Wrote %d rows to %s.%s", len(df), schema, table_name)
 
     def write_dataframe_on_conflict_do_nothing(
         self, df, table_name, schema, conflict_columns
@@ -145,25 +143,17 @@ class PostgresConnection:
         """Return distinct symbols currently present in managed tables."""
         symbols = set()
         for table_name in self.get_managed_symbol_tables(schema=schema):
-            df = self.read_query(
-                f"SELECT DISTINCT symbol FROM {schema}.{table_name}"
-            )
+            df = self.read_query(f"SELECT DISTINCT symbol FROM {schema}.{table_name}")
             if df is None or df.empty or "symbol" not in df.columns:
                 continue
-            values = (
-                df["symbol"].dropna().astype(str).str.strip()
-            )
+            values = df["symbol"].dropna().astype(str).str.strip()
             symbols.update(v for v in values if v)
         return sorted(symbols)
 
     def delete_symbol_data(self, symbols, schema=TEAM_SCHEMA):
         """Delete symbols from all managed schema tables that carry a symbol."""
         cleaned = sorted(
-            {
-                str(symbol).strip()
-                for symbol in (symbols or [])
-                if str(symbol).strip()
-            }
+            {str(symbol).strip() for symbol in (symbols or []) if str(symbol).strip()}
         )
         if not cleaned:
             return 0
@@ -279,7 +269,9 @@ class MongoConnection:
         result = db[collection].insert_many(documents)
         logger.info(
             "Inserted %d documents into %s.%s",
-            len(documents), db_name, collection,
+            len(documents),
+            db_name,
+            collection,
         )
         return result.inserted_ids
 
@@ -354,7 +346,10 @@ class MinioConnection:
         json_bytes = json.dumps(data, default=str).encode("utf-8")
         stream = io.BytesIO(json_bytes)
         self.client.put_object(
-            bucket, object_name, stream, len(json_bytes),
+            bucket,
+            object_name,
+            stream,
+            len(json_bytes),
             content_type="application/json",
         )
         logger.info("Uploaded %s to bucket %s", object_name, bucket)
@@ -393,7 +388,10 @@ class MinioConnection:
         df.to_parquet(buffer, index=False)
         buffer.seek(0)
         self.client.put_object(
-            bucket, object_name, buffer, len(buffer.getvalue()),
+            bucket,
+            object_name,
+            buffer,
+            len(buffer.getvalue()),
             content_type="application/octet-stream",
         )
         logger.info("Uploaded DataFrame to %s/%s", bucket, object_name)

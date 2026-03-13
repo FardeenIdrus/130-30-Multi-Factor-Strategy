@@ -13,13 +13,14 @@ from modules.processing.data_validator import ValidationResult
 # load_config
 # ===================================================================
 
+
 class TestLoadConfig:
 
     @patch("main.Path")
     def test_success(self, mock_path_cls):
         mock_path = MagicMock()
-        mock_path_cls.return_value.resolve.return_value.parent.__truediv__ = (
-            MagicMock(return_value=mock_path)
+        mock_path_cls.return_value.resolve.return_value.parent.__truediv__ = MagicMock(
+            return_value=mock_path
         )
         mock_path.exists.return_value = True
 
@@ -45,6 +46,7 @@ class TestLoadConfig:
 # setup_logging
 # ===================================================================
 
+
 class TestSetupLogging:
 
     @patch("main.logging")
@@ -58,6 +60,7 @@ class TestSetupLogging:
 # ===================================================================
 # print_validation_report
 # ===================================================================
+
 
 class TestPrintValidationReport:
 
@@ -76,18 +79,39 @@ class TestPrintValidationReport:
 # main
 # ===================================================================
 
+
 class TestMain:
 
     def _build_mocks(self):
         """Set up the standard mocks for main()."""
         cfg = {
-            "postgres": {"host": "h", "port": 5432, "database": "d", "user": "u", "password": "p"},
+            "postgres": {
+                "host": "h",
+                "port": 5432,
+                "database": "d",
+                "user": "u",
+                "password": "p",
+            },
             "mongo": {"host": "h", "port": 27017},
-            "minio": {"host": "h", "access_key": "a", "secret_key": "s", "secure": False},
+            "minio": {
+                "host": "h",
+                "access_key": "a",
+                "secret_key": "s",
+                "secure": False,
+            },
             "logging": {"level": "INFO"},
-            "data": {"price_period": "5y", "fundamentals_period": "5y", "fundamentals_source": "waterfall"},
+            "data": {
+                "price_period": "5y",
+                "fundamentals_period": "5y",
+                "fundamentals_source": "waterfall",
+            },
             "country_filter": "US",
-            "validation": {"min_price_rows": 5, "min_years": 1, "max_null_pct": 0.5, "strict": True},
+            "validation": {
+                "min_price_rows": 5,
+                "min_years": 1,
+                "max_null_pct": 0.5,
+                "strict": True,
+            },
             "dev": {"enabled": True, "max_symbols": 2},
         }
         return cfg
@@ -99,18 +123,27 @@ class TestMain:
     @patch("main.MongoConnection")
     @patch("main.PostgresConnection")
     @patch("main.load_config")
-    def test_happy_path(self, mock_load_cfg, mock_pg_cls, mock_mongo_cls,
-                        mock_minio_cls, mock_fetcher_cls, mock_validator_cls,
-                        mock_writer_cls):
+    def test_happy_path(
+        self,
+        mock_load_cfg,
+        mock_pg_cls,
+        mock_mongo_cls,
+        mock_minio_cls,
+        mock_fetcher_cls,
+        mock_validator_cls,
+        mock_writer_cls,
+    ):
         cfg = self._build_mocks()
         mock_load_cfg.return_value = cfg
 
         mock_pg = MagicMock()
         mock_pg.test_connection.return_value = True
-        mock_pg.get_company_list.return_value = pd.DataFrame({
-            "symbol": ["AAPL", "MSFT"],
-            "country": ["US", "US"],
-        })
+        mock_pg.get_company_list.return_value = pd.DataFrame(
+            {
+                "symbol": ["AAPL", "MSFT"],
+                "country": ["US", "US"],
+            }
+        )
         mock_pg.delete_symbols_missing_from_company_list.return_value = ["STALE"]
         mock_pg_cls.return_value = mock_pg
 
@@ -125,23 +158,29 @@ class TestMain:
         mock_fetcher = MagicMock()
         mock_fetcher.price_failures = {}
         mock_fetcher.fundamentals_failures = {}
-        prices = pd.DataFrame({
-            "symbol": ["AAPL"] * 5,
-            "trade_date": pd.bdate_range("2024-01-01", periods=5),
-            "close_price": [150.0] * 5,
-        })
+        prices = pd.DataFrame(
+            {
+                "symbol": ["AAPL"] * 5,
+                "trade_date": pd.bdate_range("2024-01-01", periods=5),
+                "close_price": [150.0] * 5,
+            }
+        )
         mock_fetcher.fetch_prices.return_value = prices
-        mock_fetcher.fetch_fundamentals.return_value = pd.DataFrame({
-            "symbol": ["AAPL"],
-            "fiscal_year": [2024],
-            "fiscal_quarter": [1],
-            "total_assets": [3e11],
-        })
-        mock_fetcher.fetch_risk_free_rates.return_value = pd.DataFrame({
-            "country": ["US"],
-            "rate_date": ["2024-01-01"],
-            "rate": [0.04],
-        })
+        mock_fetcher.fetch_fundamentals.return_value = pd.DataFrame(
+            {
+                "symbol": ["AAPL"],
+                "fiscal_year": [2024],
+                "fiscal_quarter": [1],
+                "total_assets": [3e11],
+            }
+        )
+        mock_fetcher.fetch_risk_free_rates.return_value = pd.DataFrame(
+            {
+                "country": ["US"],
+                "rate_date": ["2024-01-01"],
+                "rate": [0.04],
+            }
+        )
         mock_fetcher_cls.return_value = mock_fetcher
 
         mock_validator = MagicMock()
@@ -176,17 +215,27 @@ class TestMain:
     @patch("main.MongoConnection")
     @patch("main.PostgresConnection")
     @patch("main.load_config")
-    def test_strict_mode_halts(self, mock_load_cfg, mock_pg_cls, mock_mongo_cls,
-                               mock_minio_cls, mock_fetcher_cls, mock_validator_cls,
-                               mock_writer_cls):
+    def test_strict_mode_halts(
+        self,
+        mock_load_cfg,
+        mock_pg_cls,
+        mock_mongo_cls,
+        mock_minio_cls,
+        mock_fetcher_cls,
+        mock_validator_cls,
+        mock_writer_cls,
+    ):
         cfg = self._build_mocks()
         mock_load_cfg.return_value = cfg
 
         mock_pg = MagicMock()
         mock_pg.test_connection.return_value = True
-        mock_pg.get_company_list.return_value = pd.DataFrame({
-            "symbol": ["AAPL"], "country": ["US"],
-        })
+        mock_pg.get_company_list.return_value = pd.DataFrame(
+            {
+                "symbol": ["AAPL"],
+                "country": ["US"],
+            }
+        )
         mock_pg.delete_symbols_missing_from_company_list.return_value = []
         mock_pg_cls.return_value = mock_pg
 

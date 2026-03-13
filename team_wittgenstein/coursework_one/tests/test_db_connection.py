@@ -2,23 +2,27 @@
 
 import io
 import json
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
-import pytest
 
-from modules.db.db_connection import PostgresConnection, MongoConnection, MinioConnection
+from modules.db.db_connection import (
+    PostgresConnection,
+    MongoConnection,
+    MinioConnection,
+)
 
 
 # ===================================================================
 # PostgresConnection
 # ===================================================================
 
+
 class TestPostgresConnection:
 
     @patch("modules.db.db_connection.create_engine")
     def test_creates_engine(self, mock_create_engine):
-        pg = PostgresConnection("localhost", 5432, "fift", "user", "pass")
+        PostgresConnection("localhost", 5432, "fift", "user", "pass")
         mock_create_engine.assert_called_once()
         assert "postgresql://user:pass@localhost:5432/fift" in str(
             mock_create_engine.call_args
@@ -51,8 +55,11 @@ class TestPostgresConnection:
         with patch.object(df, "to_sql") as mock_to_sql:
             pg.write_dataframe(df, "test_table", "test_schema")
             mock_to_sql.assert_called_once_with(
-                "test_table", mock_engine, schema="test_schema",
-                if_exists="append", index=False,
+                "test_table",
+                mock_engine,
+                schema="test_schema",
+                if_exists="append",
+                index=False,
             )
 
     @patch("modules.db.db_connection.create_engine")
@@ -76,10 +83,13 @@ class TestPostgresConnection:
         mock_create_engine.return_value = mock_engine
 
         pg = PostgresConnection("localhost", 5432, "fift", "user", "pass")
-        df = pd.DataFrame({"symbol": ["AAPL"], "fiscal_year": [2024], "fiscal_quarter": [1]})
+        df = pd.DataFrame(
+            {"symbol": ["AAPL"], "fiscal_year": [2024], "fiscal_quarter": [1]}
+        )
 
-        with patch("modules.db.db_connection.Table") as mock_table_cls, \
-             patch("modules.db.db_connection.pg_insert") as mock_pg_insert:
+        with patch("modules.db.db_connection.Table"), patch(
+            "modules.db.db_connection.pg_insert"
+        ) as mock_pg_insert:
             mock_stmt = MagicMock()
             mock_pg_insert.return_value.values.return_value = mock_stmt
             mock_stmt.on_conflict_do_nothing.return_value = mock_stmt
@@ -89,7 +99,9 @@ class TestPostgresConnection:
             mock_engine.begin.return_value.__exit__ = MagicMock(return_value=False)
 
             pg.write_dataframe_on_conflict_do_nothing(
-                df, "financial_data", "team_wittgenstein",
+                df,
+                "financial_data",
+                "team_wittgenstein",
                 ["symbol", "fiscal_year", "fiscal_quarter"],
             )
             mock_stmt.on_conflict_do_nothing.assert_called_once()
@@ -102,10 +114,16 @@ class TestPostgresConnection:
 
         pg = PostgresConnection("localhost", 5432, "fift", "user", "pass")
         pg.write_dataframe_on_conflict_do_nothing(
-            None, "financial_data", "team_wittgenstein", ["symbol"],
+            None,
+            "financial_data",
+            "team_wittgenstein",
+            ["symbol"],
         )
         pg.write_dataframe_on_conflict_do_nothing(
-            pd.DataFrame(), "financial_data", "team_wittgenstein", ["symbol"],
+            pd.DataFrame(),
+            "financial_data",
+            "team_wittgenstein",
+            ["symbol"],
         )
         mock_engine.begin.assert_not_called()
 
@@ -128,7 +146,9 @@ class TestPostgresConnection:
         mock_create_engine.return_value = mock_engine
 
         pg = PostgresConnection("localhost", 5432, "fift", "user", "pass")
-        with patch.object(pg, "read_query", return_value=pd.DataFrame({"symbol": ["AAPL"]})) as mock_rq:
+        with patch.object(
+            pg, "read_query", return_value=pd.DataFrame({"symbol": ["AAPL"]})
+        ) as mock_rq:
             result = pg.get_company_list()
             mock_rq.assert_called_once()
             assert "symbol" in result.columns
@@ -196,6 +216,7 @@ class TestPostgresConnection:
 # MongoConnection
 # ===================================================================
 
+
 class TestMongoConnection:
 
     @patch("modules.db.db_connection.MongoClient")
@@ -255,6 +276,7 @@ class TestMongoConnection:
 # ===================================================================
 # MinioConnection
 # ===================================================================
+
 
 class TestMinioConnection:
 

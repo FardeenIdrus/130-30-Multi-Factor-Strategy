@@ -24,3 +24,5 @@ venv/
 
 # Environment / secrets
 .env
+team_wittgenstein/coursework_one/.coverage
+

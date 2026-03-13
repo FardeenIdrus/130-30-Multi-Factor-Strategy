@@ -58,20 +58,18 @@ class DataWriter:
         df["trade_date"] = pd.to_datetime(df["trade_date"])
 
         # Get existing (symbol, date) pairs to avoid duplicates
-        existing = self._get_existing_keys(
-            "price_data", "symbol", "trade_date"
-        )
+        existing = self._get_existing_keys("price_data", "symbol", "trade_date")
 
         before = len(df)
         if existing is not None and not existing.empty:
             existing["trade_date"] = pd.to_datetime(existing["trade_date"])
             merged = df.merge(
-                existing, on=["symbol", "trade_date"],
-                how="left", indicator=True,
+                existing,
+                on=["symbol", "trade_date"],
+                how="left",
+                indicator=True,
             )
-            df = merged[merged["_merge"] == "left_only"].drop(
-                columns=["_merge"]
-            )
+            df = merged[merged["_merge"] == "left_only"].drop(columns=["_merge"])
 
         new_rows = len(df)
         skipped = before - new_rows
@@ -84,8 +82,15 @@ class DataWriter:
 
         # Strip columns not in the price_data schema before writing
         schema_cols = [
-            "symbol", "trade_date", "open_price", "high_price",
-            "low_price", "close_price", "adjusted_close", "currency", "volume",
+            "symbol",
+            "trade_date",
+            "open_price",
+            "high_price",
+            "low_price",
+            "close_price",
+            "adjusted_close",
+            "currency",
+            "volume",
         ]
         df = df[[c for c in schema_cols if c in df.columns]]
 
@@ -145,12 +150,12 @@ class DataWriter:
         before = len(df)
         if existing is not None and not existing.empty:
             merged = df.merge(
-                existing, on=["symbol", "fiscal_year", "fiscal_quarter"],
-                how="left", indicator=True,
+                existing,
+                on=["symbol", "fiscal_year", "fiscal_quarter"],
+                how="left",
+                indicator=True,
             )
-            df = merged[merged["_merge"] == "left_only"].drop(
-                columns=["_merge"]
-            )
+            df = merged[merged["_merge"] == "left_only"].drop(columns=["_merge"])
 
         new_rows = len(df)
         skipped = before - new_rows
@@ -163,9 +168,18 @@ class DataWriter:
 
         # Strip columns not in the financial_data schema before writing
         schema_cols = [
-            "symbol", "report_date", "currency", "total_assets", "total_debt",
-            "net_income", "book_equity", "shares_outstanding", "eps",
-            "fiscal_year", "fiscal_quarter", "source",
+            "symbol",
+            "report_date",
+            "currency",
+            "total_assets",
+            "total_debt",
+            "net_income",
+            "book_equity",
+            "shares_outstanding",
+            "eps",
+            "fiscal_year",
+            "fiscal_quarter",
+            "source",
         ]
         df_write = df[[c for c in schema_cols if c in df.columns]]
 
@@ -179,9 +193,7 @@ class DataWriter:
 
         if self.fetcher:
             for symbol in df["symbol"].unique():
-                self.fetcher.mark_loaded(
-                    "fundamentals", symbol
-                )
+                self.fetcher.mark_loaded("fundamentals", symbol)
 
         return new_rows
 
@@ -204,20 +216,18 @@ class DataWriter:
         df = df.copy()
         df["rate_date"] = pd.to_datetime(df["rate_date"])
 
-        existing = self._get_existing_keys(
-            "risk_free_rates", "country", "rate_date"
-        )
+        existing = self._get_existing_keys("risk_free_rates", "country", "rate_date")
 
         before = len(df)
         if existing is not None and not existing.empty:
             existing["rate_date"] = pd.to_datetime(existing["rate_date"])
             merged = df.merge(
-                existing, on=["country", "rate_date"],
-                how="left", indicator=True,
+                existing,
+                on=["country", "rate_date"],
+                how="left",
+                indicator=True,
             )
-            df = merged[merged["_merge"] == "left_only"].drop(
-                columns=["_merge"]
-            )
+            df = merged[merged["_merge"] == "left_only"].drop(columns=["_merge"])
 
         new_rows = len(df)
         skipped = before - new_rows
@@ -255,19 +265,17 @@ class DataWriter:
         df = df.copy()
         df["calc_date"] = pd.to_datetime(df["calc_date"])
 
-        existing = self._get_existing_keys(
-            "factor_metrics", "symbol", "calc_date"
-        )
+        existing = self._get_existing_keys("factor_metrics", "symbol", "calc_date")
 
         if existing is not None and not existing.empty:
             existing["calc_date"] = pd.to_datetime(existing["calc_date"])
             merged = df.merge(
-                existing, on=["symbol", "calc_date"],
-                how="left", indicator=True,
+                existing,
+                on=["symbol", "calc_date"],
+                how="left",
+                indicator=True,
             )
-            df = merged[merged["_merge"] == "left_only"].drop(
-                columns=["_merge"]
-            )
+            df = merged[merged["_merge"] == "left_only"].drop(columns=["_merge"])
 
         new_rows = len(df)
         if new_rows == 0:
@@ -296,19 +304,17 @@ class DataWriter:
         df = df.copy()
         df["score_date"] = pd.to_datetime(df["score_date"])
 
-        existing = self._get_existing_keys(
-            "factor_scores", "symbol", "score_date"
-        )
+        existing = self._get_existing_keys("factor_scores", "symbol", "score_date")
 
         if existing is not None and not existing.empty:
             existing["score_date"] = pd.to_datetime(existing["score_date"])
             merged = df.merge(
-                existing, on=["symbol", "score_date"],
-                how="left", indicator=True,
+                existing,
+                on=["symbol", "score_date"],
+                how="left",
+                indicator=True,
             )
-            df = merged[merged["_merge"] == "left_only"].drop(
-                columns=["_merge"]
-            )
+            df = merged[merged["_merge"] == "left_only"].drop(columns=["_merge"])
 
         new_rows = len(df)
         if new_rows == 0:
@@ -331,15 +337,10 @@ class DataWriter:
             pd.DataFrame with the two key columns, or empty DataFrame.
         """
         try:
-            query = (
-                f"SELECT {key_col1}, {key_col2} "
-                f"FROM {SCHEMA}.{table}"
-            )
+            query = f"SELECT {key_col1}, {key_col2} " f"FROM {SCHEMA}.{table}"
             return self.pg.read_query(query)
         except Exception as e:
-            logger.warning(
-                "Could not read existing keys from %s: %s", table, e
-            )
+            logger.warning("Could not read existing keys from %s: %s", table, e)
             return pd.DataFrame()
 
     # MongoDB writers (audit trail)
@@ -371,9 +372,7 @@ class DataWriter:
         }
 
         self.mongo.insert_one(MONGO_DB, f"raw_{data_type}", document)
-        logger.info(
-            "MongoDB: logged %s data for %s", data_type, symbol
-        )
+        logger.info("MongoDB: logged %s data for %s", data_type, symbol)
 
     def log_batch_to_mongo(self, data_type, df):
         """Store a full batch of fetched data in MongoDB.
@@ -397,7 +396,8 @@ class DataWriter:
 
         logger.info(
             "MongoDB: logged %s batch (%d symbols)",
-            data_type, df["symbol"].nunique(),
+            data_type,
+            df["symbol"].nunique(),
         )
 
     # Pipeline summary
@@ -409,18 +409,18 @@ class DataWriter:
             dict: Mapping of table name to row count.
         """
         tables = [
-            "price_data", "financial_data", "risk_free_rates",
-            "factor_metrics", "factor_scores", "portfolio_positions",
+            "price_data",
+            "financial_data",
+            "risk_free_rates",
+            "factor_metrics",
+            "factor_scores",
+            "portfolio_positions",
         ]
         counts = {}
         for table in tables:
             try:
-                df = self.pg.read_query(
-                    f"SELECT COUNT(*) as cnt FROM {SCHEMA}.{table}"
-                )
+                df = self.pg.read_query(f"SELECT COUNT(*) as cnt FROM {SCHEMA}.{table}")
                 counts[table] = int(df.iloc[0]["cnt"])
             except Exception:
                 counts[table] = 0
         return counts
-    
-    

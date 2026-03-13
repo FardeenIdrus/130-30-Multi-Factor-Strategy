@@ -136,7 +136,6 @@ class DataValidator:
                 )
             elif bad_close > 0:
                 result.add_warning(f"{bad_close} rows have close_price <= 0")
-
         # Check date range
         if "trade_date" in df.columns:
             df_dates = pd.to_datetime(df["trade_date"])
@@ -154,9 +153,7 @@ class DataValidator:
 
         # Check rows per symbol
         rows_per_symbol = df.groupby("symbol").size()
-        thin_symbols = rows_per_symbol[
-            rows_per_symbol < self.min_price_rows
-        ]
+        thin_symbols = rows_per_symbol[rows_per_symbol < self.min_price_rows]
         if len(thin_symbols) > 0:
             result.add_warning(
                 f"{len(thin_symbols)} symbols have fewer than "
@@ -234,14 +231,10 @@ class DataValidator:
             if len(non_null) > 0:
                 negative = (non_null <= 0).sum()
                 if negative > 0:
-                    result.add_warning(
-                        f"{negative} rows have total_assets <= 0"
-                    )
+                    result.add_warning(f"{negative} rows have total_assets <= 0")
 
         # Check for duplicates
-        dupes = df.duplicated(
-            subset=["symbol", "fiscal_year", "fiscal_quarter"]
-        ).sum()
+        dupes = df.duplicated(subset=["symbol", "fiscal_year", "fiscal_quarter"]).sum()
         if dupes > 0:
             result.add_error(
                 f"{dupes} duplicate (symbol, fiscal_year, fiscal_quarter) rows"
@@ -303,13 +296,9 @@ class DataValidator:
         # Check rate bounds (should be between -0.1 and 1.0 i.e. -10% to 100%)
         if "rate" in df.columns:
             non_null = df["rate"].dropna()
-            out_of_range = (
-                (non_null < -0.1) | (non_null > 1.0)
-            ).sum()
+            out_of_range = ((non_null < -0.1) | (non_null > 1.0)).sum()
             if out_of_range > 0:
-                result.add_warning(
-                    f"{out_of_range} rates outside [-10%, 100%] range"
-                )
+                result.add_warning(f"{out_of_range} rates outside [-10%, 100%] range")
 
         # Check date range covers at least last 1 year
         if "rate_date" in df.columns:
@@ -319,16 +308,13 @@ class DataValidator:
             result.stats["latest_rate_date"] = str(date_max.date())
             if date_max < pd.Timestamp(one_year_ago):
                 result.add_warning(
-                    f"Latest rate date is {date_max.date()}, "
-                    f"more than 1 year old"
+                    f"Latest rate date is {date_max.date()}, " f"more than 1 year old"
                 )
 
         # Check for duplicates
         dupes = df.duplicated(subset=["country", "rate_date"]).sum()
         if dupes > 0:
-            result.add_error(
-                f"{dupes} duplicate (country, rate_date) rows"
-            )
+            result.add_error(f"{dupes} duplicate (country, rate_date) rows")
 
         # Check country coverage
         if expected_countries is not None:
@@ -336,9 +322,7 @@ class DataValidator:
             actual = set(df["country"].unique())
             missing = expected - actual
             if missing:
-                result.add_warning(
-                    f"Missing countries: {missing}"
-                )
+                result.add_warning(f"Missing countries: {missing}")
 
         return result
 
@@ -370,13 +354,20 @@ class DataValidator:
             logger.warning(
                 "clean_prices: dropped %d rows with close_price <= 0 "
                 "(%.1f%% of data)",
-                dropped, dropped / before * 100,
+                dropped,
+                dropped / before * 100,
             )
 
         return df
 
-    def validate_all(self, prices_df, financials_df, rates_df,
-                     expected_symbols=None, expected_countries=None):
+    def validate_all(
+        self,
+        prices_df,
+        financials_df,
+        rates_df,
+        expected_symbols=None,
+        expected_countries=None,
+    ):
         """Run all validations and return a combined report.
 
         Args:
@@ -391,9 +382,7 @@ class DataValidator:
         """
         results = {
             "prices": self.validate_prices(prices_df, expected_symbols),
-            "financials": self.validate_financials(
-                financials_df, expected_symbols
-            ),
+            "financials": self.validate_financials(financials_df, expected_symbols),
             "risk_free_rates": self.validate_risk_free_rates(
                 rates_df, expected_countries
             ),
