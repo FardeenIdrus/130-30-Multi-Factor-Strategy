@@ -7,8 +7,8 @@ coursework data pipeline.
 import io
 import json
 import logging
-from pathlib import Path
 import re
+from pathlib import Path
 
 import pandas as pd
 from minio import Minio

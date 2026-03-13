@@ -1,13 +1,12 @@
 """Tests for main.py pipeline orchestration."""
 
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import MagicMock, mock_open, patch
 
 import pandas as pd
 import pytest
 
-from main import load_config, setup_logging, print_validation_report, main
+from main import load_config, main, print_validation_report, setup_logging
 from modules.processing.data_validator import ValidationResult
-
 
 # ===================================================================
 # load_config

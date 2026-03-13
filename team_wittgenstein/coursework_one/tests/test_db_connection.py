@@ -7,11 +7,10 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 
 from modules.db.db_connection import (
-    PostgresConnection,
-    MongoConnection,
     MinioConnection,
+    MongoConnection,
+    PostgresConnection,
 )
-
 
 # ===================================================================
 # PostgresConnection

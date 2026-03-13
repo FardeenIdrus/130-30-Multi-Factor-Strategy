@@ -7,7 +7,6 @@ import pandas as pd
 
 from modules.processing.data_validator import DataValidator, ValidationResult
 
-
 # ===================================================================
 # ValidationResult
 # ===================================================================

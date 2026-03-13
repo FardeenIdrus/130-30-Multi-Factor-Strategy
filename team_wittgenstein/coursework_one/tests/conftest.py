@@ -13,7 +13,6 @@ from modules.db.db_connection import (
 )
 from modules.processing.data_validator import DataValidator
 
-
 # ---------------------------------------------------------------------------
 # Sample DataFrames
 # ---------------------------------------------------------------------------
