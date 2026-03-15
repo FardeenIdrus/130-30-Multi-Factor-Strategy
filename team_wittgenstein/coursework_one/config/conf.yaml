@@ -56,25 +56,15 @@ validation:
 
 # Scheduler: cron times for each recurring task (all times UTC)
 scheduler:
-  # prices_and_rates:      # runs monthly
-  #   day: 1
-  #   hour: 2
-  #   minute: 0
-  # fundamentals:          # runs quarterly
-  #   month: "1,4,7,10"
-  #   day: 1
-  #   hour: 4
-  #   minute: 0
-
-  prices_and_rates:
-    day: "*"
-    hour: "*"
-    minute: "*/1"
-  fundamentals:
-    month: "*"
-    day: "*"
-    hour: "*"
-    minute: "*/2"
+  prices_and_rates:      # runs monthly
+    day: 1
+    hour: 2
+    minute: 0
+  fundamentals:          # runs quarterly
+    month: "1,4,7,10"
+    day: 1
+    hour: 4
+    minute: 0
 
 # Dev mode: limit symbols to avoid hitting API rate limits during development.
 # Set enabled: false for a full production run.
