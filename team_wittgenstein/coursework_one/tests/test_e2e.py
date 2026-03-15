@@ -16,18 +16,18 @@ import pytest
 
 from main import (
     PipelineContext,
+    main,
     parse_args,
     run_fundamentals,
     run_prices_and_rates,
-    main,
 )
 from modules.output.data_writer import DataWriter
 from modules.processing.data_validator import DataValidator
 
-
 # ===================================================================
 # Synthetic data helpers
 # ===================================================================
+
 
 def _prices_df(symbols=("AAPL", "MSFT"), years=2):
     """Realistic price DataFrame that passes the real DataValidator."""
@@ -287,8 +287,12 @@ class TestMainCLI:
                     mock_writer_cls):
         """Wire up standard mocks used by multiple CLI tests."""
         from tests.test_main import (
-            _make_cfg, _make_universe, _make_prices,
-            _make_financials, _make_rates, _passed,
+            _make_cfg,
+            _make_financials,
+            _make_prices,
+            _make_rates,
+            _make_universe,
+            _passed,
         )
 
         mock_load_cfg.return_value = _make_cfg()

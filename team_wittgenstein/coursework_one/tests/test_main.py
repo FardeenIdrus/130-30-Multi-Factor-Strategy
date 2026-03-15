@@ -8,18 +8,18 @@ import pytest
 from main import (
     _load_universe,
     load_config,
+    main,
     print_validation_report,
     run_fundamentals,
     run_prices_and_rates,
     setup_logging,
-    main,
 )
 from modules.processing.data_validator import ValidationResult
-
 
 # ===================================================================
 # Helpers
 # ===================================================================
+
 
 def _make_cfg(**overrides):
     cfg = {

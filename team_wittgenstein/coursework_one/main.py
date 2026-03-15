@@ -4,13 +4,16 @@ import signal
 from dataclasses import dataclass
 from pathlib import Path
 
-import pandas as pd
 import yaml
 from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from modules.db.db_connection import PostgresConnection, MongoConnection, MinioConnection
+from modules.db.db_connection import (
+    MinioConnection,
+    MongoConnection,
+    PostgresConnection,
+)
 from modules.input.data_collector import DataFetcher
 from modules.processing.data_validator import DataValidator
 from modules.output.data_writer import DataWriter
@@ -34,18 +37,24 @@ class PipelineContext:
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
-        description="Wittgenstein data pipeline — fetch prices, fundamentals, and risk-free rates."
+        description=(
+            "Wittgenstein data pipeline — "
+            "fetch prices, fundamentals, and risk-free rates."
+        )
     )
     parser.add_argument(
         "--task",
         choices=["all", "prices", "fundamentals"],
         default="all",
-        help="Task to run on startup: 'all' (default), 'prices' (prices + risk-free rates), or 'fundamentals'.",
+        help=(
+            "Task to run on startup: 'all' (default), 'prices' "
+            "(prices + risk-free rates), or 'fundamentals'."
+        ),
     )
     parser.add_argument(
         "--no-schedule",
         action="store_true",
-        help="Run the startup task once then exit without starting the recurring scheduler.",
+        help="Run the startup task once then exit without starting the scheduler.",
     )
     parser.add_argument(
         "--run-date",
@@ -109,7 +118,7 @@ def print_validation_report(results: dict):
 
 
 def _load_universe(pg, fetcher, cfg) -> tuple:
-    """Load and normalise the company universe, run cleanup, return (symbols, countries).
+    """Load and normalise the company universe; return (symbols, countries).
 
     Called at startup and at the start of every scheduled task so each run
     reflects any company additions or delistings since the last run.
@@ -177,7 +186,9 @@ def _load_universe(pg, fetcher, cfg) -> tuple:
         symbols = symbols[:max_sym]
         logger.warning("DEV MODE: limited to %d symbols", max_sym)
 
-    logger.info("Universe loaded: %d symbols | %d countries", len(symbols), len(countries))
+    logger.info(
+        "Universe loaded: %d symbols | %d countries", len(symbols), len(countries)
+    )
     return symbols, countries
 
 
@@ -268,12 +279,16 @@ def run_prices_and_rates(ctx: PipelineContext):
 
         results = {
             "prices": ctx.validator.validate_prices(prices_df, expected),
-            "risk_free_rates": ctx.validator.validate_risk_free_rates(rates_df, countries),
+            "risk_free_rates": ctx.validator.validate_risk_free_rates(
+                rates_df, countries
+            ),
         }
         print_validation_report(results)
 
         if ctx.strict and not all(r.passed for r in results.values()):
-            logger.error("prices+rates task halted: validation failures in strict mode.")
+            logger.error(
+                "prices+rates task halted: validation failures in strict mode."
+            )
             return
 
         prices_written = ctx.writer.write_prices(prices_df)
@@ -300,7 +315,9 @@ def run_fundamentals(ctx: PipelineContext):
 
         if ctx.fetcher.fundamentals_failures:
             ctx.writer.log_fetch_to_mongo(
-                "fundamentals_failures", "classification", ctx.fetcher.fundamentals_failures
+                "fundamentals_failures",
+                "classification",
+                ctx.fetcher.fundamentals_failures,
             )
             logger.warning(
                 "Fundamentals: %d delisted, %d fetch errors",
@@ -313,7 +330,9 @@ def run_fundamentals(ctx: PipelineContext):
         print_validation_report(results)
 
         if ctx.strict and not fin_result.passed:
-            logger.error("fundamentals task halted: validation failures in strict mode.")
+            logger.error(
+                "fundamentals task halted: validation failures in strict mode."
+            )
             return
 
         fin_written = ctx.writer.write_financials(fin_df)
