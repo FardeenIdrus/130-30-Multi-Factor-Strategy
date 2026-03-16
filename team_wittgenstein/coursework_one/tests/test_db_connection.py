@@ -164,6 +164,22 @@ class TestPostgresConnection:
             assert pg.get_managed_symbol_tables() == ["price_data", "financial_data"]
 
     @patch("modules.db.db_connection.create_engine")
+    def test_get_managed_symbol_tables_empty(self, mock_create_engine):
+        """Empty result returns empty list (line 138-139)."""
+        mock_create_engine.return_value = MagicMock()
+        pg = PostgresConnection("localhost", 5432, "fift", "user", "pass")
+        with patch.object(pg, "read_query", return_value=pd.DataFrame()):
+            assert pg.get_managed_symbol_tables() == []
+
+    @patch("modules.db.db_connection.create_engine")
+    def test_get_managed_symbol_tables_none(self, mock_create_engine):
+        """None result returns empty list (line 138-139)."""
+        mock_create_engine.return_value = MagicMock()
+        pg = PostgresConnection("localhost", 5432, "fift", "user", "pass")
+        with patch.object(pg, "read_query", return_value=None):
+            assert pg.get_managed_symbol_tables() == []
+
+    @patch("modules.db.db_connection.create_engine")
     def test_get_tracked_symbols(self, mock_create_engine):
         mock_create_engine.return_value = MagicMock()
         pg = PostgresConnection("localhost", 5432, "fift", "user", "pass")
@@ -193,6 +209,63 @@ class TestPostgresConnection:
             removed = pg.delete_symbols_missing_from_company_list(["AAPL", "SAP"])
             assert removed == ["MSFT"]
             mock_delete.assert_called_once_with(["MSFT"])
+
+    @patch("modules.db.db_connection.create_engine")
+    def test_delete_symbols_missing_none_removed(self, mock_create_engine):
+        """No removed symbols returns empty list (line 193-194)."""
+        mock_create_engine.return_value = MagicMock()
+        pg = PostgresConnection("localhost", 5432, "fift", "user", "pass")
+        with patch.object(
+            pg, "get_tracked_symbols", return_value=["AAPL"]
+        ):
+            result = pg.delete_symbols_missing_from_company_list(["AAPL"])
+        assert result == []
+
+    @patch("modules.db.db_connection.create_engine")
+    def test_get_tracked_symbols_empty_table(self, mock_create_engine):
+        """Empty query result during symbol scan is skipped (line 147-148)."""
+        mock_create_engine.return_value = MagicMock()
+        pg = PostgresConnection("localhost", 5432, "fift", "user", "pass")
+        with patch.object(
+            pg, "get_managed_symbol_tables", return_value=["price_data"]
+        ), patch.object(pg, "read_query", return_value=pd.DataFrame()):
+            result = pg.get_tracked_symbols()
+        assert result == []
+
+    @patch("modules.db.db_connection.create_engine")
+    def test_delete_symbol_data_empty_symbols(self, mock_create_engine):
+        """Empty symbols list returns 0 (line 158-159)."""
+        mock_create_engine.return_value = MagicMock()
+        pg = PostgresConnection("localhost", 5432, "fift", "user", "pass")
+        assert pg.delete_symbol_data([]) == 0
+
+    @patch("modules.db.db_connection.create_engine")
+    def test_delete_symbol_data_no_tables(self, mock_create_engine):
+        """No managed tables returns 0 (line 162-163)."""
+        mock_create_engine.return_value = MagicMock()
+        pg = PostgresConnection("localhost", 5432, "fift", "user", "pass")
+        with patch.object(pg, "get_managed_symbol_tables", return_value=[]):
+            assert pg.delete_symbol_data(["AAPL"]) == 0
+
+    @patch("modules.db.db_connection.create_engine")
+    def test_delete_symbol_data_executes(self, mock_create_engine):
+        """Executes DELETE on managed tables (line 165-182)."""
+        mock_engine = MagicMock()
+        mock_create_engine.return_value = mock_engine
+        mock_conn = MagicMock()
+        mock_engine.begin.return_value.__enter__ = MagicMock(
+            return_value=mock_conn
+        )
+        mock_engine.begin.return_value.__exit__ = MagicMock(
+            return_value=False
+        )
+        pg = PostgresConnection("localhost", 5432, "fift", "user", "pass")
+        with patch.object(
+            pg, "get_managed_symbol_tables", return_value=["price_data"]
+        ):
+            result = pg.delete_symbol_data(["AAPL", "MSFT"])
+        assert result == 2
+        mock_conn.execute.assert_called_once()
 
     @patch("modules.db.db_connection.create_engine")
     def test_execute_sql_file(self, mock_create_engine, tmp_path):
@@ -411,3 +484,80 @@ class TestMinioConnection:
 
         mock_client.list_buckets.side_effect = Exception("unreachable")
         assert minio.test_connection() is False
+
+    @patch("modules.db.db_connection.Minio")
+    def test_download_json_other_s3error_raises(self, mock_minio_cls):
+        """Non-NoSuchKey S3Error is re-raised (line 376)."""
+        from minio.error import S3Error
+
+        mock_client = MagicMock()
+        mock_minio_cls.return_value = mock_client
+
+        err = S3Error(
+            MagicMock(), "AccessDenied", "forbidden", "resource", "req", "host"
+        )
+        mock_client.get_object.side_effect = err
+
+        minio = MinioConnection("localhost:9000", "key", "secret")
+        import pytest
+
+        with pytest.raises(S3Error):
+            minio.download_json("bucket", "secret.json")
+
+    @patch("modules.db.db_connection.Minio")
+    def test_download_dataframe_other_s3error_raises(self, mock_minio_cls):
+        """Non-NoSuchKey S3Error is re-raised (line 418)."""
+        from minio.error import S3Error
+
+        mock_client = MagicMock()
+        mock_minio_cls.return_value = mock_client
+
+        err = S3Error(
+            MagicMock(), "AccessDenied", "forbidden", "resource", "req", "host"
+        )
+        mock_client.get_object.side_effect = err
+
+        minio = MinioConnection("localhost:9000", "key", "secret")
+        import pytest
+
+        with pytest.raises(S3Error):
+            minio.download_dataframe("bucket", "secret.parquet")
+
+    @patch("modules.db.db_connection.Minio")
+    def test_delete_object_success(self, mock_minio_cls):
+        """Successful delete returns True (line 452-454)."""
+        mock_client = MagicMock()
+        mock_minio_cls.return_value = mock_client
+        minio = MinioConnection("localhost:9000", "key", "secret")
+        assert minio.delete_object("bucket", "file.json") is True
+
+    @patch("modules.db.db_connection.Minio")
+    def test_delete_object_nosuchkey(self, mock_minio_cls):
+        """NoSuchKey returns False (line 456-457)."""
+        from minio.error import S3Error
+
+        mock_client = MagicMock()
+        mock_minio_cls.return_value = mock_client
+        err = S3Error(
+            MagicMock(), "NoSuchKey", "not found", "resource", "req", "host"
+        )
+        mock_client.remove_object.side_effect = err
+        minio = MinioConnection("localhost:9000", "key", "secret")
+        assert minio.delete_object("bucket", "missing.json") is False
+
+    @patch("modules.db.db_connection.Minio")
+    def test_delete_object_other_error_raises(self, mock_minio_cls):
+        """Non-NoSuchKey S3Error is re-raised (line 458)."""
+        from minio.error import S3Error
+
+        mock_client = MagicMock()
+        mock_minio_cls.return_value = mock_client
+        err = S3Error(
+            MagicMock(), "AccessDenied", "forbidden", "resource", "req", "host"
+        )
+        mock_client.remove_object.side_effect = err
+        minio = MinioConnection("localhost:9000", "key", "secret")
+        import pytest
+
+        with pytest.raises(S3Error):
+            minio.delete_object("bucket", "secret.json")

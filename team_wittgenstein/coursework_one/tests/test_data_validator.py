@@ -307,6 +307,59 @@ class TestCleanPrices:
 # ===================================================================
 
 
+class TestValidateFinancialsEdgeCases:
+
+    def test_missing_symbols_warning(self, validator):
+        df = pd.DataFrame(
+            {
+                "symbol": ["AAPL"],
+                "fiscal_year": [2024],
+                "fiscal_quarter": [1],
+                "total_assets": [3e11],
+            }
+        )
+        result = validator.validate_financials(
+            df, expected_symbols=["AAPL", "MSFT"]
+        )
+        assert any("missing" in w.lower() for w in result.warnings)
+
+
+class TestValidateRatesEdgeCases:
+
+    def test_duplicate_rates_error(self, validator):
+        df = pd.DataFrame(
+            {
+                "country": ["US", "US"],
+                "rate_date": [date.today(), date.today()],
+                "rate": [0.04, 0.05],
+            }
+        )
+        result = validator.validate_risk_free_rates(df)
+        assert result.passed is False
+        assert any("duplicate" in e.lower() for e in result.errors)
+
+    def test_missing_countries_warning(self, validator):
+        df = pd.DataFrame(
+            {
+                "country": ["US"],
+                "rate_date": [date.today()],
+                "rate": [0.04],
+            }
+        )
+        result = validator.validate_risk_free_rates(
+            df, expected_countries=["US", "GB"]
+        )
+        assert any("missing" in w.lower() for w in result.warnings)
+
+
+class TestCleanPricesEdgeCases:
+
+    def test_no_close_price_column(self, validator):
+        df = pd.DataFrame({"symbol": ["AAPL"], "open_price": [150.0]})
+        result = validator.clean_prices(df)
+        assert len(result) == 1
+
+
 class TestValidateAll:
 
     def test_returns_all_three(

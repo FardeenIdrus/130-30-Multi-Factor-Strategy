@@ -26,3 +26,7 @@ venv/
 .env
 team_wittgenstein/coursework_one/.coverage
 
+# Sphinx build output
+_build/
+
+team_wittgenstein/coursework_one/.coverage

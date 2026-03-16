@@ -246,3 +246,208 @@ class TestGetTableCounts:
         mock_pg_conn.read_query.side_effect = Exception("table not found")
         counts = writer.get_table_counts()
         assert all(v == 0 for v in counts.values())
+
+
+# ===================================================================
+# write_prices edge cases
+# ===================================================================
+
+
+class TestWritePricesEdgeCases:
+
+    def test_all_duplicates_returns_zero(self, writer, mock_pg_conn):
+        """All rows already exist -> returns 0, no write."""
+        df = pd.DataFrame(
+            {
+                "symbol": ["AAPL"],
+                "trade_date": pd.to_datetime(["2024-01-02"]),
+                "close_price": [150.0],
+            }
+        )
+        mock_pg_conn.read_query.return_value = pd.DataFrame(
+            {
+                "symbol": ["AAPL"],
+                "trade_date": pd.to_datetime(["2024-01-02"]),
+            }
+        )
+        assert writer.write_prices(df) == 0
+        mock_pg_conn.write_dataframe.assert_not_called()
+
+
+# ===================================================================
+# write_financials edge cases
+# ===================================================================
+
+
+class TestWriteFinancialsEdgeCases:
+
+    def test_dedupes_incoming(self, writer, mock_pg_conn):
+        """Duplicate incoming rows are dropped before insert."""
+        df = pd.DataFrame(
+            {
+                "symbol": ["AAPL", "AAPL"],
+                "fiscal_year": [2024, 2024],
+                "fiscal_quarter": [1, 1],
+                "total_assets": [3e11, 3.1e11],
+            }
+        )
+        count = writer.write_financials(df)
+        assert count == 1
+
+    def test_all_duplicates_returns_zero(self, writer, mock_pg_conn):
+        """All rows already in DB -> returns 0."""
+        df = pd.DataFrame(
+            {
+                "symbol": ["AAPL"],
+                "fiscal_year": [2024],
+                "fiscal_quarter": [1],
+                "total_assets": [3e11],
+            }
+        )
+        mock_pg_conn.read_query.return_value = pd.DataFrame(
+            {
+                "symbol": ["AAPL"],
+                "fiscal_year": [2024],
+                "fiscal_quarter": [1],
+            }
+        )
+        assert writer.write_financials(df) == 0
+
+    def test_pg_read_exception_still_writes(self, writer, mock_pg_conn):
+        """If read_query fails, still attempts write."""
+        df = pd.DataFrame(
+            {
+                "symbol": ["AAPL"],
+                "fiscal_year": [2024],
+                "fiscal_quarter": [1],
+                "total_assets": [3e11],
+            }
+        )
+        mock_pg_conn.read_query.side_effect = Exception("table missing")
+        count = writer.write_financials(df)
+        assert count == 1
+
+    def test_marks_loaded(self, writer_with_fetcher):
+        """Fetcher.mark_loaded called for each symbol."""
+        df = pd.DataFrame(
+            {
+                "symbol": ["AAPL"],
+                "fiscal_year": [2024],
+                "fiscal_quarter": [1],
+                "total_assets": [3e11],
+            }
+        )
+        writer_with_fetcher.write_financials(df)
+        writer_with_fetcher.fetcher.mark_loaded.assert_called()
+
+
+# ===================================================================
+# write_risk_free_rates edge cases
+# ===================================================================
+
+
+class TestWriteRatesEdgeCases:
+
+    def test_all_duplicates_returns_zero(self, writer, mock_pg_conn):
+        df = pd.DataFrame(
+            {
+                "country": ["US"],
+                "rate_date": pd.to_datetime(["2024-01-31"]),
+                "rate": [0.04],
+            }
+        )
+        mock_pg_conn.read_query.return_value = pd.DataFrame(
+            {
+                "country": ["US"],
+                "rate_date": pd.to_datetime(["2024-01-31"]),
+            }
+        )
+        assert writer.write_risk_free_rates(df) == 0
+
+    def test_marks_loaded(self, writer_with_fetcher):
+        df = pd.DataFrame(
+            {
+                "country": ["US"],
+                "rate_date": pd.to_datetime(["2024-01-31"]),
+                "rate": [0.04],
+            }
+        )
+        writer_with_fetcher.write_risk_free_rates(df)
+        writer_with_fetcher.fetcher.mark_loaded.assert_called_with(
+            "risk_free_rates", "all"
+        )
+
+
+# ===================================================================
+# write_factor_metrics / scores edge cases
+# ===================================================================
+
+
+class TestWriteFactorEdgeCases:
+
+    def test_factor_metrics_empty(self, writer, mock_pg_conn):
+        assert writer.write_factor_metrics(None) == 0
+        assert writer.write_factor_metrics(pd.DataFrame()) == 0
+
+    def test_factor_metrics_skips_duplicates(self, writer, mock_pg_conn):
+        df = pd.DataFrame(
+            {
+                "symbol": ["AAPL"],
+                "calc_date": pd.to_datetime(["2024-01-01"]),
+                "pb_ratio": [3.5],
+            }
+        )
+        mock_pg_conn.read_query.return_value = pd.DataFrame(
+            {
+                "symbol": ["AAPL"],
+                "calc_date": pd.to_datetime(["2024-01-01"]),
+            }
+        )
+        assert writer.write_factor_metrics(df) == 0
+
+    def test_factor_scores_empty(self, writer, mock_pg_conn):
+        assert writer.write_factor_scores(None) == 0
+        assert writer.write_factor_scores(pd.DataFrame()) == 0
+
+    def test_factor_scores_skips_duplicates(self, writer, mock_pg_conn):
+        df = pd.DataFrame(
+            {
+                "symbol": ["AAPL"],
+                "score_date": pd.to_datetime(["2024-01-01"]),
+                "composite_score": [1.2],
+            }
+        )
+        mock_pg_conn.read_query.return_value = pd.DataFrame(
+            {
+                "symbol": ["AAPL"],
+                "score_date": pd.to_datetime(["2024-01-01"]),
+            }
+        )
+        assert writer.write_factor_scores(df) == 0
+
+    def test_get_existing_keys_exception(self, writer, mock_pg_conn):
+        """_get_existing_keys returns empty on DB error."""
+        mock_pg_conn.read_query.side_effect = Exception("conn lost")
+        result = writer._get_existing_keys("price_data", "symbol", "trade_date")
+        assert result.empty
+
+
+# ===================================================================
+# MongoDB edge cases
+# ===================================================================
+
+
+class TestMongoEdgeCases:
+
+    def test_log_batch_empty(self, writer, mock_mongo_conn):
+        writer.log_batch_to_mongo("prices", None)
+        mock_mongo_conn.insert_one.assert_not_called()
+
+        writer.log_batch_to_mongo("prices", pd.DataFrame())
+        mock_mongo_conn.insert_one.assert_not_called()
+
+    def test_log_batch_no_symbol_column(self, writer, mock_mongo_conn):
+        """DataFrame without 'symbol' column logs as single doc."""
+        df = pd.DataFrame({"rate": [0.04], "country": ["US"]})
+        writer.log_batch_to_mongo("rates", df)
+        mock_mongo_conn.insert_one.assert_called_once()
