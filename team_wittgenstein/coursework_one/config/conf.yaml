@@ -69,5 +69,5 @@ scheduler:
 # Dev mode: limit symbols to avoid hitting API rate limits during development.
 # Set enabled: false for a full production run.
 dev:
-  enabled: true
+  enabled: false
   max_symbols: 3

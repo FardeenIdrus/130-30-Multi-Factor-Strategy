@@ -1,6 +1,7 @@
 """Fundamentals fetching orchestration and waterfall merge."""
 
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pandas as pd
 
@@ -86,47 +87,60 @@ class FundamentalsMixin:
         symbols,
         period,
         source,
+        max_workers=4,
     ):
-        """Fetch fundamentals sequentially (rate-limit safe).
+        """Fetch fundamentals concurrently (rate-limit safe).
+
+        Uses a thread pool to overlap I/O waits across symbols while
+        the per-API rate limiters (which use threading.Lock) ensure
+        request spacing is respected.
 
         Args:
             symbols: Symbols to fetch.
             period: Historical window to keep.
             source: Fundamentals data source strategy.
+            max_workers: Number of concurrent fetch threads.
 
         Returns:
-            list[pd.DataFrame]
+            tuple[list[pd.DataFrame], list[str]]
         """
         result_dfs = []
         failed = []
 
         logger.info(
-            "Fetching fundamentals for %d symbols sequentially " "(source=%s).",
+            "Fetching fundamentals for %d symbols with %d workers (source=%s).",
             len(symbols),
+            max_workers,
             source,
         )
-        for symbol in symbols:
-            try:
-                df = self._fetch_single_fundamental(
-                    symbol,
-                    period=period,
-                    source=source,
+
+        def _fetch_one(symbol):
+            df = self._fetch_single_fundamental(symbol, period=period, source=source)
+            if df is not None and not df.empty:
+                df = self._ensure_fundamentals_schema(df)
+                df = self._dedupe_dataframe("fundamentals", df, name=symbol)
+                cache_source = (
+                    ",".join(sorted(df["source"].dropna().astype(str).unique()))
+                    or "unknown"
                 )
-                if df is not None and not df.empty:
-                    df = self._ensure_fundamentals_schema(df)
-                    df = self._dedupe_dataframe("fundamentals", df, name=symbol)
-                    cache_source = (
-                        ",".join(sorted(df["source"].dropna().astype(str).unique()))
-                        or "unknown"
-                    )
-                    cache_name = self._fundamentals_cache_name(symbol)
-                    self._cache_dataframe("fundamentals", cache_name, df, cache_source)
-                    result_dfs.append(df)
-                else:
+                cache_name = self._fundamentals_cache_name(symbol)
+                self._cache_dataframe("fundamentals", cache_name, df, cache_source)
+                return symbol, df
+            return symbol, None
+
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {pool.submit(_fetch_one, sym): sym for sym in symbols}
+            for future in as_completed(futures):
+                symbol = futures[future]
+                try:
+                    _, df = future.result()
+                    if df is not None:
+                        result_dfs.append(df)
+                    else:
+                        failed.append(symbol)
+                except Exception as e:
+                    logger.error("Failed fundamentals for %s: %s", symbol, e)
                     failed.append(symbol)
-            except Exception as e:
-                logger.error("Failed fundamentals for %s: %s", symbol, e)
-                failed.append(symbol)
 
         logger.info(
             "Fundamentals: %d success, %d failed",
