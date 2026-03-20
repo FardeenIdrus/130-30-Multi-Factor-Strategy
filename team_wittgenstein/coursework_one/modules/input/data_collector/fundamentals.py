@@ -214,6 +214,22 @@ class FundamentalsMixin:
         Returns:
             pd.DataFrame or None.
         """
+        _fill_fields = [
+            "total_assets",
+            "total_debt",
+            "net_income",
+            "book_equity",
+            "shares_outstanding",
+            "eps",
+        ]
+
+        def _has_nulls(df):
+            """Return True if any fill field has at least one null."""
+            for col in _fill_fields:
+                if col in df.columns and df[col].isna().any():
+                    return True
+            return False
+
         sources = []
 
         # 1. SEC EDGAR (free, no API key, US-listed only)
@@ -225,6 +241,12 @@ class FundamentalsMixin:
                 symbol,
                 len(edgar_df),
             )
+            if not _has_nulls(edgar_df):
+                logger.info(
+                    "Waterfall %s: EDGAR complete, skipping SimFin/yfinance",
+                    symbol,
+                )
+                return self._finalise_waterfall(sources, period)
 
         # 2. SimFin
         try:
@@ -236,6 +258,15 @@ class FundamentalsMixin:
                     symbol,
                     len(simfin_df),
                 )
+                merged_so_far = self._merge_waterfall(sources)
+                if not _has_nulls(merged_so_far):
+                    logger.info(
+                        "Waterfall %s: complete after SimFin, skipping yfinance",
+                        symbol,
+                    )
+                    return self._finalise_waterfall(
+                        sources, period, merged=merged_so_far
+                    )
         except SimFinServerError:
             logger.warning("Waterfall %s: SimFin HTTP 500, skipping.", symbol)
 
@@ -254,15 +285,18 @@ class FundamentalsMixin:
             return None
 
         # 4. Merge per-field in priority order
-        merged = self._merge_waterfall(sources)
+        return self._finalise_waterfall(sources, period)
 
-        # 5. Forward fill remaining nulls from previous quarters
+    def _finalise_waterfall(self, sources, period, merged=None):
+        """Merge, forward-fill, and apply period filter to waterfall sources."""
+        if not sources:
+            return None
+        if merged is None:
+            merged = self._merge_waterfall(sources)
         merged = self._forward_fill_fundamentals(merged)
-
         merged = self._ensure_fundamentals_schema(merged)
         if merged is None or merged.empty:
             return None
-
         merged = self._apply_fundamentals_period(merged, period)
         return merged.reset_index(drop=True)
 
