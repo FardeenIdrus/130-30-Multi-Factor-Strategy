@@ -4,6 +4,17 @@ All notable changes to the Wittgenstein data pipeline are documented here.
 
 ## [Unreleased]
 
+### Added
+- Waterfall early-exit: SimFin and yfinance are skipped when the upstream
+  source already covers all fill fields with no nulls, reducing unnecessary
+  API calls for well-covered symbols
+
+### Fixed
+- EDGAR submissions archive fetching: `_edgar_get_fiscal_periods` now reads
+  `filings.files` archive entries in addition to `filings.recent`, preventing
+  silent data loss for companies whose older 10-Q/10-K filings were pushed out
+  of the ~1 000-entry `recent` window (e.g. JPM was missing ~65 quarters)
+
 ---
 
 ## [0.4.0] - 2026-03-15

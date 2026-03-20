@@ -610,3 +610,112 @@ class TestFetchWaterfallEmpty:
         ):
             result = fetcher._fetch_waterfall_fundamentals("AAPL", "5y")
         assert result is None
+
+
+# ===================================================================
+# _fetch_waterfall_fundamentals — early-exit optimisations
+# ===================================================================
+
+
+class TestFetchWaterfallEarlyExit:
+
+    def _complete_edgar_df(self):
+        return pd.DataFrame(
+            {
+                "symbol": ["AAPL"],
+                "fiscal_year": [2024],
+                "fiscal_quarter": [1],
+                "report_date": [pd.Timestamp("2024-03-31")],
+                "total_assets": [3e11],
+                "total_debt": [1e11],
+                "net_income": [2e10],
+                "book_equity": [1e11],
+                "shares_outstanding": [15e9],
+                "eps": [1.5],
+                "currency": ["USD"],
+                "source": ["edgar"],
+            }
+        )
+
+    def test_edgar_complete_skips_simfin_and_yfinance(self, fetcher):
+        """EDGAR with no nulls → SimFin and yfinance are never called."""
+        mock_simfin = patch.object(fetcher, "_fetch_simfin_fundamentals")
+        mock_yf = patch.object(fetcher, "_fetch_yfinance_fundamentals")
+        with patch.object(
+            fetcher, "_fetch_edgar_fundamentals", return_value=self._complete_edgar_df()
+        ), mock_simfin as sim, mock_yf as yf:
+            result = fetcher._fetch_waterfall_fundamentals("AAPL", "5y")
+            sim.assert_not_called()
+            yf.assert_not_called()
+        assert result is not None
+
+    def test_edgar_with_nulls_calls_simfin(self, fetcher):
+        """EDGAR with nulls → SimFin is called."""
+        edgar_df = self._complete_edgar_df()
+        edgar_df["eps"] = None
+        simfin_df = self._complete_edgar_df()
+        simfin_df["source"] = "simfin"
+        with patch.object(
+            fetcher, "_fetch_edgar_fundamentals", return_value=edgar_df
+        ), patch.object(
+            fetcher, "_fetch_simfin_fundamentals", return_value=simfin_df
+        ) as mock_sim, patch.object(
+            fetcher, "_fetch_yfinance_fundamentals", return_value=pd.DataFrame()
+        ):
+            result = fetcher._fetch_waterfall_fundamentals("AAPL", "5y")
+            mock_sim.assert_called_once()
+        assert result is not None
+
+    def test_simfin_fills_nulls_skips_yfinance(self, fetcher):
+        """After EDGAR+SimFin merge is complete → yfinance is never called."""
+        edgar_df = self._complete_edgar_df()
+        edgar_df["eps"] = None
+        simfin_df = self._complete_edgar_df()
+        simfin_df["source"] = "simfin"
+        with patch.object(
+            fetcher, "_fetch_edgar_fundamentals", return_value=edgar_df
+        ), patch.object(
+            fetcher, "_fetch_simfin_fundamentals", return_value=simfin_df
+        ), patch.object(
+            fetcher, "_fetch_yfinance_fundamentals"
+        ) as mock_yf:
+            result = fetcher._fetch_waterfall_fundamentals("AAPL", "5y")
+            mock_yf.assert_not_called()
+        assert result is not None
+
+    def test_simfin_server_error_falls_through_to_yfinance(self, fetcher):
+        """SimFinServerError → yfinance is still attempted."""
+        edgar_df = self._complete_edgar_df()
+        edgar_df["eps"] = None
+        yf_df = self._complete_edgar_df()
+        yf_df["source"] = "yfinance"
+        with patch.object(
+            fetcher, "_fetch_edgar_fundamentals", return_value=edgar_df
+        ), patch.object(
+            fetcher,
+            "_fetch_simfin_fundamentals",
+            side_effect=SimFinServerError("500"),
+        ), patch.object(
+            fetcher, "_fetch_yfinance_fundamentals", return_value=yf_df
+        ) as mock_yf:
+            result = fetcher._fetch_waterfall_fundamentals("AAPL", "5y")
+            mock_yf.assert_called_once()
+        assert result is not None
+
+
+# ===================================================================
+# _finalise_waterfall
+# ===================================================================
+
+
+class TestFinaliseWaterfall:
+
+    def test_empty_sources_returns_none(self, fetcher):
+        assert fetcher._finalise_waterfall([], "5y") is None
+
+    def test_empty_merged_returns_none(self, fetcher):
+        with patch.object(
+            fetcher, "_merge_waterfall", return_value=pd.DataFrame()
+        ):
+            result = fetcher._finalise_waterfall([("edgar", pd.DataFrame())], "5y")
+        assert result is None
