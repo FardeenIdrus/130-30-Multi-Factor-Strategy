@@ -1,3 +1,7 @@
+logging:
+  level: INFO
+  run_log_path: logs/pipeline_runs.jsonl
+
 postgres:
   host: "localhost"
   port: 5439
@@ -195,4 +199,4 @@ scheduler:
 # Set enabled: false for a full production run.
 dev:
   enabled: false
-  max_symbols: 3
+  max_symbols: 100

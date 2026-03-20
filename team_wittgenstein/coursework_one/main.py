@@ -1,7 +1,10 @@
 import argparse
+import json
 import logging
 import signal
+import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
@@ -250,8 +253,20 @@ def build_context() -> PipelineContext:
     )
 
 
+def _append_run_log(cfg: dict, record: dict) -> None:
+    log_path = Path(
+        cfg.get("logging", {}).get("run_log_path", "logs/pipeline_runs.jsonl")
+    )
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(log_path, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(record) + "\n")
+
+
 def run_prices_and_rates(ctx: PipelineContext):
     """Fetch, validate, and write prices + risk-free rates."""
+    run_id = str(uuid.uuid4())
+    start_time = datetime.now(timezone.utc).isoformat()
+    stages_ok, stages_failed, error_str = [], [], ""
     logger.info("Task: prices + risk-free rates starting")
     try:
         symbols, countries = _load_universe(ctx.pg, ctx.fetcher, ctx.cfg)
@@ -288,21 +303,43 @@ def run_prices_and_rates(ctx: PipelineContext):
             logger.error(
                 "prices+rates task halted: validation failures in strict mode."
             )
+            stages_failed.append("validation")
             return
 
         prices_written = ctx.writer.write_prices(prices_df)
+        stages_ok.append("prices")
         rates_written = ctx.writer.write_risk_free_rates(rates_df)
+        stages_ok.append("risk_free_rates")
         logger.info(
             "Task complete: %d price rows, %d rate rows written",
             prices_written,
             rates_written,
         )
-    except Exception:
+    except Exception as e:
         logger.exception("prices+rates task failed — scheduler will continue")
+        stages_failed.append("prices_and_rates")
+        error_str = str(e)
+    finally:
+        _append_run_log(
+            ctx.cfg,
+            {
+                "run_id": run_id,
+                "task": "prices_and_rates",
+                "start_time_utc": start_time,
+                "end_time_utc": datetime.now(timezone.utc).isoformat(),
+                "stages_ok": stages_ok,
+                "stages_failed": stages_failed,
+                "status": "success" if not stages_failed else "failed",
+                "error": error_str,
+            },
+        )
 
 
 def run_fundamentals(ctx: PipelineContext):
     """Fetch, validate, and write fundamentals data."""
+    run_id = str(uuid.uuid4())
+    start_time = datetime.now(timezone.utc).isoformat()
+    stages_ok, stages_failed, error_str = [], [], ""
     logger.info("Task: fundamentals starting")
     try:
         symbols, _ = _load_universe(ctx.pg, ctx.fetcher, ctx.cfg)
@@ -334,12 +371,30 @@ def run_fundamentals(ctx: PipelineContext):
             logger.error(
                 "fundamentals task halted: validation failures in strict mode."
             )
+            stages_failed.append("validation")
             return
 
         fin_written = ctx.writer.write_financials(fin_df)
+        stages_ok.append("financials")
         logger.info("Task complete: %d financials rows written", fin_written)
-    except Exception:
+    except Exception as e:
         logger.exception("fundamentals task failed — scheduler will continue")
+        stages_failed.append("fundamentals")
+        error_str = str(e)
+    finally:
+        _append_run_log(
+            ctx.cfg,
+            {
+                "run_id": run_id,
+                "task": "fundamentals",
+                "start_time_utc": start_time,
+                "end_time_utc": datetime.now(timezone.utc).isoformat(),
+                "stages_ok": stages_ok,
+                "stages_failed": stages_failed,
+                "status": "success" if not stages_failed else "failed",
+                "error": error_str,
+            },
+        )
 
 
 def run_full_pipeline(ctx: PipelineContext):

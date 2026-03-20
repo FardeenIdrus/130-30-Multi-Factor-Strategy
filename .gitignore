@@ -30,3 +30,6 @@ team_wittgenstein/coursework_one/.coverage
 _build/
 
 team_wittgenstein/coursework_one/.coverage
+
+# Runtime-generated logs
+team_wittgenstein/coursework_one/logs/

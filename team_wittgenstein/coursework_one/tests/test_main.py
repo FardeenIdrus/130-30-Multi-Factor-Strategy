@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from main import (
+    _append_run_log,
     _load_universe,
     load_config,
     main,
@@ -145,6 +146,53 @@ class TestSetupLogging:
         mock_logging.DEBUG = 10
         setup_logging("DEBUG")
         mock_logging.basicConfig.assert_called_once()
+
+
+# ===================================================================
+# _append_run_log
+# ===================================================================
+
+
+class TestAppendRunLog:
+
+    def test_writes_valid_json_line(self, tmp_path):
+        log_file = tmp_path / "logs" / "pipeline_runs.jsonl"
+        cfg = {"logging": {"run_log_path": str(log_file)}}
+        record = {
+            "run_id": "abc-123",
+            "task": "prices_and_rates",
+            "start_time_utc": "2024-01-01T00:00:00+00:00",
+            "end_time_utc": "2024-01-01T00:01:00+00:00",
+            "stages_ok": ["prices"],
+            "stages_failed": [],
+            "status": "success",
+            "error": "",
+        }
+        _append_run_log(cfg, record)
+        lines = log_file.read_text().strip().splitlines()
+        assert len(lines) == 1
+        parsed = __import__("json").loads(lines[0])
+        assert parsed["run_id"] == "abc-123"
+        assert parsed["status"] == "success"
+
+    def test_creates_log_directory(self, tmp_path):
+        log_file = tmp_path / "nested" / "dir" / "runs.jsonl"
+        cfg = {"logging": {"run_log_path": str(log_file)}}
+        _append_run_log(cfg, {"run_id": "x"})
+        assert log_file.exists()
+
+    def test_uses_default_path_when_not_configured(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        _append_run_log({}, {"run_id": "y"})
+        assert (tmp_path / "logs" / "pipeline_runs.jsonl").exists()
+
+    def test_appends_multiple_lines(self, tmp_path):
+        log_file = tmp_path / "runs.jsonl"
+        cfg = {"logging": {"run_log_path": str(log_file)}}
+        _append_run_log(cfg, {"run_id": "first"})
+        _append_run_log(cfg, {"run_id": "second"})
+        lines = log_file.read_text().strip().splitlines()
+        assert len(lines) == 2
 
 
 # ===================================================================
@@ -306,6 +354,28 @@ class TestRunPricesAndRates:
         run_prices_and_rates(ctx)
         ctx.writer.write_prices.assert_not_called()
 
+    @patch("main._append_run_log")
+    @patch("main._load_universe", return_value=(["AAPL"], ["US"]))
+    def test_run_log_written_on_success(self, mock_lu, mock_log):
+        ctx = self._make_ctx()
+        run_prices_and_rates(ctx)
+        mock_log.assert_called_once()
+        record = mock_log.call_args[0][1]
+        assert record["task"] == "prices_and_rates"
+        assert record["status"] == "success"
+        assert "prices" in record["stages_ok"]
+        assert "risk_free_rates" in record["stages_ok"]
+
+    @patch("main._append_run_log")
+    @patch("main._load_universe", side_effect=RuntimeError("db down"))
+    def test_run_log_written_on_exception(self, mock_lu, mock_log):
+        ctx = self._make_ctx()
+        run_prices_and_rates(ctx)
+        mock_log.assert_called_once()
+        record = mock_log.call_args[0][1]
+        assert record["status"] == "failed"
+        assert record["error"] != ""
+
 
 # ===================================================================
 # run_fundamentals
@@ -349,6 +419,27 @@ class TestRunFundamentals:
         ctx = self._make_ctx()
         run_fundamentals(ctx)
         ctx.writer.write_financials.assert_not_called()
+
+    @patch("main._append_run_log")
+    @patch("main._load_universe", return_value=(["AAPL"], ["US"]))
+    def test_run_log_written_on_success(self, mock_lu, mock_log):
+        ctx = self._make_ctx()
+        run_fundamentals(ctx)
+        mock_log.assert_called_once()
+        record = mock_log.call_args[0][1]
+        assert record["task"] == "fundamentals"
+        assert record["status"] == "success"
+        assert "financials" in record["stages_ok"]
+
+    @patch("main._append_run_log")
+    @patch("main._load_universe", side_effect=RuntimeError("db down"))
+    def test_run_log_written_on_exception(self, mock_lu, mock_log):
+        ctx = self._make_ctx()
+        run_fundamentals(ctx)
+        mock_log.assert_called_once()
+        record = mock_log.call_args[0][1]
+        assert record["status"] == "failed"
+        assert record["error"] != ""
 
 
 # ===================================================================
