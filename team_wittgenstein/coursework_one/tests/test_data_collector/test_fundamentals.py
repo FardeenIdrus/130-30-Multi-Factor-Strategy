@@ -714,8 +714,6 @@ class TestFinaliseWaterfall:
         assert fetcher._finalise_waterfall([], "5y") is None
 
     def test_empty_merged_returns_none(self, fetcher):
-        with patch.object(
-            fetcher, "_merge_waterfall", return_value=pd.DataFrame()
-        ):
+        with patch.object(fetcher, "_merge_waterfall", return_value=pd.DataFrame()):
             result = fetcher._finalise_waterfall([("edgar", pd.DataFrame())], "5y")
         assert result is None
