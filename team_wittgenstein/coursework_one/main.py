@@ -450,8 +450,8 @@ def main(argv=None):
         minute=pr_cfg.get("minute", 0),
     )
     fund_trigger = CronTrigger(
-        month=fund_cfg.get("month", "1,4,7,10"),
-        day=fund_cfg.get("day", 1),
+        month=fund_cfg.get("month", "2,5,8,11"),
+        day=fund_cfg.get("day", 15),
         hour=fund_cfg.get("hour", 4),
         minute=fund_cfg.get("minute", 0),
     )
@@ -488,8 +488,8 @@ def main(argv=None):
         pr_cfg.get("day", 1),
         pr_cfg.get("hour", 2),
         pr_cfg.get("minute", 0),
-        fund_cfg.get("month", "1,4,7,10"),
-        fund_cfg.get("day", 1),
+        fund_cfg.get("month", "2,5,8,11"),
+        fund_cfg.get("day", 15),
         fund_cfg.get("hour", 4),
         fund_cfg.get("minute", 0),
     )

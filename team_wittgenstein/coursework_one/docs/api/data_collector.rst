@@ -2,7 +2,7 @@ DataFetcher — Data Collection
 =============================
 
 The ``DataFetcher`` class is the main entry point for fetching data
-from external APIs. It composes seven specialised mixins.
+from external APIs. It composes eight specialised mixins.
 
 .. automodule:: modules.input.data_collector
    :members:
