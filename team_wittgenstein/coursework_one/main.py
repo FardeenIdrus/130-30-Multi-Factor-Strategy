@@ -282,6 +282,7 @@ def run_prices_and_rates(ctx: PipelineContext):
             ),
         }
         print_validation_report(results)
+        ctx.writer.log_validation_to_mongo(results)
 
         if ctx.strict and not all(r.passed for r in results.values()):
             logger.error(
@@ -327,6 +328,7 @@ def run_fundamentals(ctx: PipelineContext):
         fin_result = ctx.validator.validate_financials(fin_df, symbols)
         results = {"financials": fin_result}
         print_validation_report(results)
+        ctx.writer.log_validation_to_mongo(results)
 
         if ctx.strict and not fin_result.passed:
             logger.error(

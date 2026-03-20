@@ -403,6 +403,30 @@ class DataWriter:
             df["symbol"].nunique(),
         )
 
+    def log_validation_to_mongo(self, results):
+        """Store validation results in MongoDB for historical tracking.
+
+        Args:
+            results: Dict mapping dataset name to ValidationResult.
+        """
+        run_ts = datetime.utcnow().isoformat()
+        for dataset, res in results.items():
+            document = {
+                "run_id": run_ts,
+                "dataset": dataset,
+                "passed": res.passed,
+                "warnings_count": len(res.warnings),
+                "errors_count": len(res.errors),
+                "warnings": res.warnings,
+                "errors": res.errors,
+                "stats": res.stats,
+            }
+            self.mongo.insert_one(MONGO_DB, "data_quality_log", document)
+        logger.info(
+            "MongoDB: logged validation results for %s",
+            ", ".join(results.keys()),
+        )
+
     # Pipeline summary
 
     def get_table_counts(self):
