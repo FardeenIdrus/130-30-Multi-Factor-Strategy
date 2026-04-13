@@ -137,7 +137,7 @@ class TestFetchRatesYfinance:
         result = fetcher._fetch_rates_yfinance(["US"])
         assert not result.empty
         assert "country" in result.columns
-        assert (result["country"] == "US").all()
+        assert (result["country"] == "United States").all()
         assert result.iloc[0]["rate"] == pytest.approx(0.045)
 
     @patch("modules.input.data_collector.rates.yf")
@@ -159,7 +159,7 @@ class TestFetchRatesYfinance:
         irx.index.name = "Date"
         mock_yf.download.return_value = irx
         result = fetcher._fetch_rates_yfinance(["US", "GB"])
-        assert set(result["country"].unique()) == {"US", "GB"}
+        assert set(result["country"].unique()) == {"United States", "United Kingdom"}
 
 
 # ===================================================================
