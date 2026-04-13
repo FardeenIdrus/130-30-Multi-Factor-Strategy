@@ -6,7 +6,7 @@ import pandas as pd
 import requests
 import yfinance as yf
 
-from .constants import COUNTRY_TO_OECD
+from .constants import COUNTRY_CODE_TO_NAME, COUNTRY_TO_OECD
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +94,7 @@ class RatesMixin:
                         period = time_periods[idx]
                         all_rates.append(
                             {
-                                "country": country,
+                                "country": COUNTRY_CODE_TO_NAME.get(country, country),
                                 "rate_date": pd.Timestamp(period["id"]).date(),
                                 "rate": values[0] / 100,
                             }
@@ -148,7 +148,7 @@ class RatesMixin:
         all_rates = []
         for country in countries:
             country_df = irx.copy()
-            country_df["country"] = country
+            country_df["country"] = COUNTRY_CODE_TO_NAME.get(country, country)
             all_rates.append(country_df)
 
         result = pd.concat(all_rates, ignore_index=True)
