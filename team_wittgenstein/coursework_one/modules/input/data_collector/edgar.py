@@ -128,9 +128,7 @@ class EdgarMixin:
             name = file_info.get("name", "")
             if not name:
                 continue
-            older = self._edgar_get_json(
-                f"https://data.sec.gov/submissions/{name}"
-            )
+            older = self._edgar_get_json(f"https://data.sec.gov/submissions/{name}")
             if not older:
                 continue
             for key in ("form", "reportDate", "filingDate"):
