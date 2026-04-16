@@ -256,3 +256,25 @@ class TestRunLiquidityFilter:
 
         sql_arg = db.read_query.call_args[0][0]
         assert "trade_date < :rebalance_date" in sql_arg
+
+    def test_all_fail_adtv_no_illiq_computed(self):
+        """When no symbol passes ADTV, illiq else-branch builds empty df (line 203)."""
+        prices = _make_prices(["AAPL"], n_days=30, base_date=date(2024, 2, 1))
+        # Set volume to zero so ADTV = 0, well below any minimum
+        prices["volume"] = 0.0
+        db = MagicMock()
+        db.read_query.return_value = prices
+        config = LiquidityConfig(adtv_min_dollar=1_000_000)
+        survivors = run_liquidity_filter(db, date(2024, 2, 1), config)
+        assert survivors == []
+
+
+# ── apply_illiq_filter: empty input ──────────────────────────────────────────
+
+
+class TestApplyIlliqFilterEmpty:
+
+    def test_empty_df_returned_unchanged(self):
+        """apply_illiq_filter with empty df hits early-return (line 127)."""
+        result = apply_illiq_filter(pd.DataFrame(), removal_pct=0.10)
+        assert result.empty

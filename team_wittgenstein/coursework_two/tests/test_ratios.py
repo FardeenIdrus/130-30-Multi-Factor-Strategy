@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 from modules.zscore.ratios import (
+    FACTOR_METRICS,
     FLIP_METRICS,
     MIN_GROUP_SIZE,
     MIN_OLS_ROWS,
@@ -287,3 +288,67 @@ class TestOrthogonaliseLowvol:
 
         msg = f"Post-orth correlation not near zero: {post_corr:.4f}"
         assert abs(post_corr) == pytest.approx(0.0, abs=0.05), msg
+
+
+# ── compute_factor_scores: missing-sector warning (line 78) ──────────────────
+
+
+class TestComputeFactorScoresMissingSector:
+
+    def test_symbols_without_sector_produce_nan_zscores(self):
+        """Symbols not in sector_map log a warning and get NaN z-scores."""
+        df = _make_df(n=10)
+        # Map only half the symbols — rest have no sector
+        half = list(df["symbol"].iloc[:5])
+        sector_map = {s: "SectorA" for s in half}
+        result_df, zscore_df = compute_factor_scores(df, sector_map)
+        # Symbols without sector should have NaN factor scores
+        no_sector = result_df[~result_df["symbol"].isin(half)]
+        assert no_sector["value_score"].isna().all()
+
+
+# ── compute_factor_scores: sigma == 0 within group (line 94) ─────────────────
+
+
+class TestComputeFactorScoresZeroSigma:
+
+    def test_identical_values_in_group_give_zero_zscore(self):
+        """All symbols in a group with the same metric value → sigma=0 → z=0."""
+        df = _make_df(n=10)
+        sector_map = {s: "SectorA" for s in df["symbol"]}
+        # Set all pb_ratio values equal → sigma = 0
+        df["pb_ratio"] = 1.5
+        result_df, _ = compute_factor_scores(df, sector_map)
+        # value_score should be finite (not NaN) when sigma==0 → z=0
+        assert result_df["value_score"].notna().any()
+
+
+# ── compute_factor_scores: missing metric column (line 100) ──────────────────
+
+
+class TestComputeFactorScoresMissingColumn:
+
+    def test_missing_metric_column_skipped_gracefully(self):
+        """If a metric column is absent from df, it is skipped without error."""
+        df = _make_df(n=10)
+        sector_map = {s: "SectorA" for s in df["symbol"]}
+        # Drop one metric column
+        df = df.drop(columns=["pb_ratio"])
+        result_df, zscore_df = compute_factor_scores(df, sector_map)
+        assert isinstance(result_df, pd.DataFrame)
+
+
+# ── compute_factor_scores: factor with no z_names (lines 111-112) ────────────
+
+
+class TestComputeFactorScoresNoZNames:
+
+    def test_factor_all_columns_missing_gives_nan_score(self):
+        """When all columns for a factor are absent, that factor score is NaN."""
+        df = _make_df(n=10)
+        sector_map = {s: "SectorA" for s in df["symbol"]}
+        # Remove all columns belonging to the "value" factor
+        value_metrics = FACTOR_METRICS.get("value_score", [])
+        df = df.drop(columns=[m for m in value_metrics if m in df.columns])
+        result_df, _ = compute_factor_scores(df, sector_map)
+        assert result_df["value_score"].isna().all()

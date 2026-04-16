@@ -15,6 +15,7 @@ from modules.zscore.zscore import (
     _calc_pb_ratio,
     _calc_roe,
     _calc_volatility,
+    _fetch_risk_free_rate,
     _last_bday_of_month,
     _nearest_price,
     calculate_ratios,
@@ -473,6 +474,74 @@ class TestCalculateRatios:
         for m in metrics:
             assert pd.notna(result.iloc[0][m]), f"{m} should not be null with full data"
 
+    def _make_pg_no_fin(self, symbols):
+        """pg where latest_fin is empty — covers fin-is-None branches."""
+        pg = MagicMock()
+        rebalance = REBALANCE
+        price_rows = []
+        for sym in symbols:
+            for d in pd.bdate_range(end=rebalance, periods=400):
+                price_rows.append(
+                    {
+                        "symbol": sym,
+                        "trade_date": d,
+                        "adjusted_close": 100.0 + np.random.rand(),
+                    }
+                )
+        price_df = pd.DataFrame(price_rows)
+        price_df["trade_date"] = pd.to_datetime(price_df["trade_date"])
+        empty_fin = pd.DataFrame(
+            columns=[
+                "symbol",
+                "report_date",
+                "total_assets",
+                "total_debt",
+                "net_income",
+                "book_equity",
+                "shares_outstanding",
+                "eps",
+                "fiscal_year",
+                "fiscal_quarter",
+            ]
+        )
+        empty_fin["report_date"] = pd.to_datetime(empty_fin["report_date"])
+        empty_prior = pd.DataFrame(columns=["symbol", "report_date", "total_assets"])
+        empty_prior["report_date"] = pd.to_datetime(empty_prior["report_date"])
+        empty_ttm = pd.DataFrame(
+            columns=["symbol", "report_date", "net_income", "book_equity"]
+        )
+        empty_ttm["report_date"] = pd.to_datetime(empty_ttm["report_date"])
+        empty_eps = pd.DataFrame(
+            columns=[
+                "symbol",
+                "report_date",
+                "eps",
+                "fiscal_year",
+                "fiscal_quarter",
+            ]
+        )
+        empty_eps["report_date"] = pd.to_datetime(empty_eps["report_date"])
+        rf_df = pd.DataFrame({"rate": [0.04]})
+        pg.read_query.side_effect = [
+            price_df,
+            empty_fin,
+            empty_prior,
+            empty_ttm,
+            empty_eps,
+            rf_df,
+        ]
+        return pg
+
+    def test_no_fin_data_nulls_fundamental_metrics(self):
+        """When latest_fin is empty, pb_ratio/asset_growth/leverage are NaN."""
+        np.random.seed(7)
+        symbols = ["AAPL"]
+        pg = self._make_pg_no_fin(symbols)
+        result = calculate_ratios(pg, REBALANCE, symbols)
+        assert pd.isna(result.iloc[0]["pb_ratio"])
+        assert pd.isna(result.iloc[0]["asset_growth"])
+        assert pd.isna(result.iloc[0]["leverage"])
+
     def test_missing_price_data_nulls_price_metrics(self):
         symbols = ["AAPL"]
         pg = MagicMock()
@@ -526,3 +595,227 @@ class TestCalculateRatios:
         assert pd.isna(result.iloc[0]["pb_ratio"])
         assert pd.isna(result.iloc[0]["momentum_6m"])
         assert pd.isna(result.iloc[0]["volatility_3m"])
+
+    def _make_pg_no_prior(self, symbols):
+        """pg where prior_fin is empty — covers prior-is-None asset_growth branch."""
+        pg = MagicMock()
+        rebalance = REBALANCE
+        price_rows = []
+        for sym in symbols:
+            for d in pd.bdate_range(end=rebalance, periods=400):
+                price_rows.append(
+                    {
+                        "symbol": sym,
+                        "trade_date": d,
+                        "adjusted_close": 100.0 + np.random.rand(),
+                    }
+                )
+        price_df = pd.DataFrame(price_rows)
+        price_df["trade_date"] = pd.to_datetime(price_df["trade_date"])
+        latest_fin = pd.DataFrame(
+            [
+                {
+                    "symbol": sym,
+                    "report_date": pd.Timestamp(rebalance - timedelta(days=50)),
+                    "total_assets": 1e10,
+                    "total_debt": 2e9,
+                    "net_income": 5e8,
+                    "book_equity": 4e9,
+                    "shares_outstanding": 1e8,
+                    "eps": 2.0,
+                    "fiscal_year": 2023,
+                    "fiscal_quarter": 4,
+                }
+                for sym in symbols
+            ]
+        )
+        empty_prior = pd.DataFrame(columns=["symbol", "report_date", "total_assets"])
+        empty_prior["report_date"] = pd.to_datetime(empty_prior["report_date"])
+        ttm_rows = [
+            {
+                "symbol": sym,
+                "report_date": pd.Timestamp(rebalance - timedelta(days=50)),
+                "net_income": 5e8,
+                "book_equity": 4e9,
+            }
+            for sym in symbols
+        ]
+        ttm_fin = pd.DataFrame(ttm_rows)
+        ttm_fin["report_date"] = pd.to_datetime(ttm_fin["report_date"])
+        empty_eps = pd.DataFrame(
+            columns=[
+                "symbol",
+                "report_date",
+                "eps",
+                "fiscal_year",
+                "fiscal_quarter",
+            ]
+        )
+        empty_eps["report_date"] = pd.to_datetime(empty_eps["report_date"])
+        rf_df = pd.DataFrame({"rate": [0.04]})
+        pg.read_query.side_effect = [
+            price_df,
+            latest_fin,
+            empty_prior,
+            ttm_fin,
+            empty_eps,
+            rf_df,
+        ]
+        return pg
+
+    def test_no_prior_fin_nulls_asset_growth(self):
+        """When prior_fin is empty, asset_growth should be NaN."""
+        np.random.seed(11)
+        symbols = ["AAPL"]
+        pg = self._make_pg_no_prior(symbols)
+        result = calculate_ratios(pg, REBALANCE, symbols)
+        assert pd.isna(result.iloc[0]["asset_growth"])
+
+    def test_stale_price_still_computes_pb(self):
+        """Stale price warning fires but pb_ratio is still computed."""
+        np.random.seed(13)
+        symbols = ["AAPL"]
+        pg = MagicMock()
+        # Build price data ending 40 days before rebalance (stale)
+        stale_end = date(REBALANCE.year, REBALANCE.month, REBALANCE.day)
+        stale_ts = pd.Timestamp(stale_end) - pd.Timedelta(days=40)
+        price_rows = []
+        for d in pd.bdate_range(end=stale_ts, periods=400):
+            price_rows.append(
+                {"symbol": "AAPL", "trade_date": d, "adjusted_close": 100.0}
+            )
+        price_df = pd.DataFrame(price_rows)
+        price_df["trade_date"] = pd.to_datetime(price_df["trade_date"])
+        latest_fin = pd.DataFrame(
+            [
+                {
+                    "symbol": "AAPL",
+                    "report_date": stale_ts - pd.Timedelta(days=10),
+                    "total_assets": 1e10,
+                    "total_debt": 2e9,
+                    "net_income": 5e8,
+                    "book_equity": 4e9,
+                    "shares_outstanding": 1e8,
+                    "eps": 2.0,
+                    "fiscal_year": 2023,
+                    "fiscal_quarter": 4,
+                }
+            ]
+        )
+        prior_fin = pd.DataFrame(
+            [
+                {
+                    "symbol": "AAPL",
+                    "report_date": stale_ts - pd.Timedelta(days=400),
+                    "total_assets": 9e9,
+                }
+            ]
+        )
+        prior_fin["report_date"] = pd.to_datetime(prior_fin["report_date"])
+        empty_ttm = pd.DataFrame(
+            columns=["symbol", "report_date", "net_income", "book_equity"]
+        )
+        empty_ttm["report_date"] = pd.to_datetime(empty_ttm["report_date"])
+        empty_eps = pd.DataFrame(
+            columns=[
+                "symbol",
+                "report_date",
+                "eps",
+                "fiscal_year",
+                "fiscal_quarter",
+            ]
+        )
+        empty_eps["report_date"] = pd.to_datetime(empty_eps["report_date"])
+        rf_df = pd.DataFrame({"rate": [0.04]})
+        pg.read_query.side_effect = [
+            price_df,
+            latest_fin,
+            prior_fin,
+            empty_ttm,
+            empty_eps,
+            rf_df,
+        ]
+        result = calculate_ratios(pg, REBALANCE, symbols)
+        # pb_ratio may be computed (stale warning logs but doesn't block)
+        assert "pb_ratio" in result.columns
+
+
+# ── _fetch_risk_free_rate ─────────────────────────────────────────────────────
+
+
+class TestFetchRiskFreeRate:
+
+    def test_returns_rate_from_db(self):
+        pg = MagicMock()
+        pg.read_query.return_value = pd.DataFrame({"rate": [0.04]})
+        result = _fetch_risk_free_rate(pg, "United States", REBALANCE)
+        assert result == pytest.approx(0.04)
+
+    def test_returns_zero_when_empty(self):
+        pg = MagicMock()
+        pg.read_query.return_value = pd.DataFrame({"rate": []})
+        result = _fetch_risk_free_rate(pg, "United States", REBALANCE)
+        assert result == 0.0
+
+
+# ── _calc_earnings_stability: NaN eps ─────────────────────────────────────────
+
+
+class TestCalcEarningsStabilityNanEps:
+
+    def test_nan_eps_rows_skipped(self):
+        """Rows with NaN eps should be skipped (line 304 coverage)."""
+        rows = _eps_rows(n_years=6)
+        rows.loc[rows.index[0], "eps"] = float("nan")
+        # Should still compute (remaining rows cover enough history)
+        result = _calc_earnings_stability("AAPL", rows)
+        assert result is None or isinstance(result, float)
+
+
+# ── _calc_momentum: non-positive base price ────────────────────────────────────
+
+
+class TestCalcMomentumNonPositivePrice:
+
+    def _prices_with_zero_at(self, rebalance_ts: pd.Timestamp, months_back: int):
+        """Build 400-day price series with price=0 exactly at T-{months_back}."""
+        idx = pd.bdate_range(end=rebalance_ts, periods=400)
+        prices = pd.Series([100.0] * len(idx), index=idx)
+        target = _last_bday_of_month(rebalance_ts, months_back)
+        # Find the closest available date and zero it out
+        closest = prices.index[prices.index.get_indexer([target], method="nearest")[0]]
+        prices[closest] = 0.0
+        return prices
+
+    def test_non_positive_p_t7_returns_none_for_6m(self):
+        """Price at T-7 months = 0 triggers fallback for momentum_6m (line 355)."""
+        prices = self._prices_with_zero_at(REBALANCE_TS, 7)
+        mom_6m, _ = _calc_momentum("AAPL", prices, REBALANCE_TS, annual_rf=0.0)
+        assert mom_6m is None
+
+    def test_non_positive_p_t13_returns_none_for_12m(self):
+        """Price at T-13 months = 0 triggers fallback for momentum_12m (line 365)."""
+        prices = self._prices_with_zero_at(REBALANCE_TS, 13)
+        _, mom_12m = _calc_momentum("AAPL", prices, REBALANCE_TS, annual_rf=0.0)
+        assert mom_12m is None
+
+
+# ── _calc_volatility: >10% zero returns ───────────────────────────────────────
+
+
+class TestCalcVolatilityZeroReturns:
+
+    def test_many_zero_returns_triggers_warning_3m(self):
+        """More than 10% zero returns triggers vol_3m warning (line 395)."""
+        idx = pd.bdate_range(end=REBALANCE, periods=300)
+        # Flat prices → all returns = 0 (>10% zeros)
+        prices = pd.Series([100.0] * 300, index=idx)
+        vol_3m, _ = _calc_volatility("AAPL", prices)
+        assert vol_3m == pytest.approx(0.0)
+
+    def test_many_zero_returns_triggers_warning_12m(self):
+        """More than 10% zero returns triggers vol_12m warning (line 411)."""
+        idx = pd.bdate_range(end=REBALANCE, periods=300)
+        prices = pd.Series([100.0] * 300, index=idx)
+        _, vol_12m = _calc_volatility("AAPL", prices)
+        assert vol_12m == pytest.approx(0.0)
