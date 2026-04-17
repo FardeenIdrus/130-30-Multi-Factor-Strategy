@@ -10,7 +10,6 @@ from unittest.mock import MagicMock
 
 import numpy as np
 import pandas as pd
-import pytest
 from scipy.stats import spearmanr
 
 from modules.composite.composite_scorer import (
