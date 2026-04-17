@@ -21,7 +21,6 @@ from modules.composite.composite_scorer import (
     run_composite_scorer,
 )
 
-
 # ---------------------------------------------------------------------------
 # compute_monthly_returns
 # ---------------------------------------------------------------------------
