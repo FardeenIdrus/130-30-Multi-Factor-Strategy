@@ -51,8 +51,8 @@ CREATE TABLE team_wittgenstein.ic_weights (
     ic_id           SERIAL PRIMARY KEY,
     rebalance_date  DATE            NOT NULL,
     factor_name     VARCHAR(20)     NOT NULL,
-    ic_mean_36m     NUMERIC,
-    ic_weight       NUMERIC,
+    ic_mean_36m     NUMERIC         NOT NULL,
+    ic_weight       NUMERIC         NOT NULL,
     created_at      TIMESTAMPTZ     DEFAULT NOW(),
     UNIQUE (rebalance_date, factor_name)
 );

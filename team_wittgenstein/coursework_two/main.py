@@ -1,15 +1,12 @@
-
 import logging
-
 from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
 import yaml
 
-from modules.db.db_connection import (
-    PostgresConnection
-)
+from modules.composite.composite_scorer import CompositeConfig, run_composite_scorer
+from modules.db.db_connection import PostgresConnection
 from modules.liquidity.liquidity_filter import LiquidityConfig, run_liquidity_filter
 from modules.output.data_writer import DataWriter
 from modules.zscore.ratios import compute_factor_scores, orthogonalise_lowvol
@@ -28,7 +25,6 @@ class PipelineContext:
     countries: list
     sector_map: dict
     strict: bool
-
 
 
 def load_config():
@@ -54,31 +50,36 @@ def _load_universe(pg, cfg) -> tuple[list, list]:
       2. Ticker normalise — replace dots with dashes (BF.B → BF-B)
       3. Dev mode cap    — limit to cfg['dev']['max_symbols'] when enabled
     """
-    result = pg.read_query(
-        """
+    result = pg.read_query("""
         SELECT DISTINCT p.symbol
         FROM team_wittgenstein.price_data p
         INNER JOIN team_wittgenstein.financial_data f
             ON p.symbol = f.symbol
         ORDER BY p.symbol
-        """
-    )
+        """)
     if result is None or result.empty:
         raise RuntimeError("No symbols found with both price and fundamental data.")
 
     symbols = result["symbol"].dropna().astype(str).str.strip().tolist()
-    logger.info("Universe: %d symbols with both price and fundamental data", len(symbols))
+    logger.info(
+        "Universe: %d symbols with both price and fundamental data", len(symbols)
+    )
 
     # Countries for risk-free rate selection — still pulled from company_static
     universe = pg.get_company_list()
     country_col = (
-        "country" if universe is not None and "country" in universe.columns
-        else "country_code" if universe is not None and "country_code" in universe.columns
-        else None
+        "country"
+        if universe is not None and "country" in universe.columns
+        else (
+            "country_code"
+            if universe is not None and "country_code" in universe.columns
+            else None
+        )
     )
     countries = (
         universe[country_col].dropna().astype(str).str.strip().unique().tolist()
-        if country_col else []
+        if country_col
+        else []
     )
 
     # 2. Normalise dot-delimited tickers (BF.B → BF-B)
@@ -91,7 +92,9 @@ def _load_universe(pg, cfg) -> tuple[list, list]:
         symbols = symbols[:max_sym]
         logger.warning("DEV MODE: limited to %d symbols", max_sym)
 
-    logger.info("Universe loaded: %d symbols | %d countries", len(symbols), len(countries))
+    logger.info(
+        "Universe loaded: %d symbols | %d countries", len(symbols), len(countries)
+    )
     return symbols, countries
 
 
@@ -100,7 +103,7 @@ def build_context() -> PipelineContext:
     cfg = load_config()
     setup_logging(cfg.get("logging", {}).get("level", "INFO"))
 
-    pg_cfg    = cfg["postgres"]
+    pg_cfg = cfg["postgres"]
 
     pg = PostgresConnection(
         host=pg_cfg["host"],
@@ -112,21 +115,28 @@ def build_context() -> PipelineContext:
 
     if not pg.test_connection():
         raise RuntimeError("PostgreSQL connection failed.")
-    
+
     pg.execute_sql_file("sql/create_cw2_tables.sql")
 
     symbols, countries = _load_universe(pg, cfg)
 
     universe = pg.get_company_list()
     sector_map = (
-        universe
-        .assign(symbol=universe["symbol"].astype(str).str.strip().str.replace(".", "-", regex=False))
+        universe.assign(
+            symbol=universe["symbol"]
+            .astype(str)
+            .str.strip()
+            .str.replace(".", "-", regex=False)
+        )
         .dropna(subset=["gics_sector"])
         .set_index("symbol")["gics_sector"]
         .to_dict()
     )
-    logger.info("Sector map loaded: %d symbols across %d sectors",
-                len(sector_map), len(set(sector_map.values())))
+    logger.info(
+        "Sector map loaded: %d symbols across %d sectors",
+        len(sector_map),
+        len(set(sector_map.values())),
+    )
 
     return PipelineContext(
         cfg=cfg,
@@ -148,7 +158,7 @@ def backfill_factor_metrics(ctx: PipelineContext, years: int = 5) -> None:
     Rows are written with ON CONFLICT DO NOTHING — re-running is safe and
     will skip any dates already present in factor_metrics.
     """
-    end   = pd.Timestamp.today() - pd.offsets.BMonthEnd(1)
+    end = pd.Timestamp.today() - pd.offsets.BMonthEnd(1)
     start = end - pd.DateOffset(years=years)
     rebalance_dates = pd.date_range(start=start, end=end, freq=pd.offsets.BMonthEnd())
 
@@ -171,13 +181,25 @@ def backfill_factor_metrics(ctx: PipelineContext, years: int = 5) -> None:
     all_ratios = []
     for i, ts in enumerate(rebalance_dates, 1):
         rebalance_date = ts.date()
-        logger.info("[%d/%d] %s — running liquidity filter", i, len(rebalance_dates), rebalance_date)
+        logger.info(
+            "[%d/%d] %s — running liquidity filter",
+            i,
+            len(rebalance_dates),
+            rebalance_date,
+        )
         liquid_symbols = run_liquidity_filter(ctx.pg, rebalance_date, liq_config)
         if not liquid_symbols:
-            logger.warning("%s | liquidity filter removed all symbols — skipping", rebalance_date)
+            logger.warning(
+                "%s | liquidity filter removed all symbols — skipping", rebalance_date
+            )
             continue
         symbols_this_date = [s for s in ctx.symbols if s in set(liquid_symbols)]
-        logger.info("%s | %d/%d symbols pass liquidity filter", rebalance_date, len(symbols_this_date), len(ctx.symbols))
+        logger.info(
+            "%s | %d/%d symbols pass liquidity filter",
+            rebalance_date,
+            len(symbols_this_date),
+            len(ctx.symbols),
+        )
         ratios = calculate_ratios(
             pg=ctx.pg,
             rebalance_date=rebalance_date,
@@ -189,8 +211,15 @@ def backfill_factor_metrics(ctx: PipelineContext, years: int = 5) -> None:
     combined = pd.concat(all_ratios, ignore_index=True)
     # Cast numeric columns explicitly to avoid FutureWarning from all-NA early dates
     numeric_cols = [
-        "pb_ratio", "asset_growth", "roe", "leverage", "earnings_stability",
-        "momentum_6m", "momentum_12m", "volatility_3m", "volatility_12m",
+        "pb_ratio",
+        "asset_growth",
+        "roe",
+        "leverage",
+        "earnings_stability",
+        "momentum_6m",
+        "momentum_12m",
+        "volatility_3m",
+        "volatility_12m",
     ]
     for col in numeric_cols:
         if col in combined.columns:
@@ -204,12 +233,51 @@ def backfill_factor_metrics(ctx: PipelineContext, years: int = 5) -> None:
     logger.info("Orthogonalisation complete. Writing to DB...")
     ctx.writer.write_factor_zscores(zscores)
     ctx.writer.write_factor_scores(combined)
-    logger.info("Backfill complete: %d rows across %d dates", len(combined), len(rebalance_dates))
+    logger.info(
+        "Backfill complete: %d rows across %d dates",
+        len(combined),
+        len(rebalance_dates),
+    )
+
+
+def backfill_composite_scores(ctx: PipelineContext, years: int = 5) -> None:
+    """Compute IC-weighted composite scores for every rebalancing date.
+
+    Must run after backfill_factor_metrics so that factor_scores is populated.
+    For each date, computes trailing 36-month IC weights and writes composite
+    scores back to factor_scores + persists IC weights to ic_weights table.
+    """
+    end = pd.Timestamp.today() - pd.offsets.BMonthEnd(1)
+    start = end - pd.DateOffset(years=years)
+    rebalance_dates = pd.date_range(start=start, end=end, freq=pd.offsets.BMonthEnd())
+
+    comp_cfg_raw = ctx.cfg.get("composite", {})
+    comp_config = CompositeConfig(
+        ic_lookback_months=comp_cfg_raw.get("ic_lookback_months", 36),
+    )
+
+    for i, ts in enumerate(rebalance_dates, 1):
+        rebalance_date = ts.date()
+        logger.info(
+            "[%d/%d] %s — computing composite scores",
+            i,
+            len(rebalance_dates),
+            rebalance_date,
+        )
+        result = run_composite_scorer(ctx.pg, rebalance_date, comp_config)
+        logger.info(
+            "%s | composite scores: %d stocks",
+            rebalance_date,
+            len(result),
+        )
+
+    logger.info("Composite score backfill complete.")
 
 
 def main(argv=None):
     ctx = build_context()
     backfill_factor_metrics(ctx, years=5)
+    backfill_composite_scores(ctx, years=5)
 
 
 if __name__ == "__main__":
