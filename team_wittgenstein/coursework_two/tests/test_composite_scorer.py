@@ -38,8 +38,7 @@ class TestComputeMonthlyReturns:
                 "symbol": ["A"] * 44 + ["B"] * 44,
                 "trade_date": list(pd.bdate_range("2023-01-02", periods=44)) * 2,
                 "adjusted_close": (
-                    [100.0] * 22 + [110.0] * 22
-                    + [200.0] * 22 + [190.0] * 22
+                    [100.0] * 22 + [110.0] * 22 + [200.0] * 22 + [190.0] * 22
                 ),
             }
         )
@@ -137,9 +136,7 @@ class TestComputeIcWeights:
             }
         )
         result = compute_ic_weights(monthly_ics)
-        value_weight = result[result["factor_name"] == "value"][
-            "ic_weight"
-        ].iloc[0]
+        value_weight = result[result["factor_name"] == "value"]["ic_weight"].iloc[0]
         assert value_weight == 0.0
         assert abs(result["ic_weight"].sum() - 1.0) < 1e-10
 

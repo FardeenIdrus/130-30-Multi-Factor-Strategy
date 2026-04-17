@@ -14,6 +14,13 @@ liquidity:
 composite:
   ic_lookback_months: 36
 
+portfolio:
+  selection_threshold: 0.10
+  buffer_exit_threshold: 0.20
+  buffer_max_months: 3
+  ewma_lambda: 0.94
+  ewma_lookback_days: 252
+
 # Dev mode: limit symbols to avoid long runtimes during development.
 # Set enabled: false for a full production run.
 dev:
