@@ -66,7 +66,7 @@ def main():
         {"calc_date": rebalance_date},
     )
     if not breakdown.empty:
-        print(f"\n--- Pass/fail breakdown ---")
+        print("\n--- Pass/fail breakdown ---")
         print(breakdown.to_string(index=False))
 
     # Show stocks that failed each stage

@@ -9,6 +9,10 @@ from modules.composite.composite_scorer import CompositeConfig, run_composite_sc
 from modules.db.db_connection import PostgresConnection
 from modules.liquidity.liquidity_filter import LiquidityConfig, run_liquidity_filter
 from modules.output.data_writer import DataWriter
+from modules.portfolio.ewma_volatility import EWMAConfig, run_ewma_volatility
+from modules.portfolio.position_builder import PositionConfig, build_portfolio_positions
+from modules.portfolio.risk_adjusted import compute_risk_adjusted_scores
+from modules.portfolio.stock_selector import SelectionConfig, run_stock_selection
 from modules.zscore.ratios import compute_factor_scores, orthogonalise_lowvol
 from modules.zscore.winsorise import winsorise_metrics
 from modules.zscore.zscore import calculate_ratios
@@ -274,10 +278,102 @@ def backfill_composite_scores(ctx: PipelineContext, years: int = 5) -> None:
     logger.info("Composite score backfill complete.")
 
 
+def backfill_portfolio_positions(ctx: PipelineContext, years: int = 5) -> None:
+    """Run Steps 1-7 of portfolio construction for every rebalancing date.
+
+    Must run after backfill_composite_scores so that factor_scores is
+    populated with composite_score values.
+
+    For each date:
+      1. Stock selection with buffer zone (stock_selector)
+      2. EWMA volatility (ewma_volatility)
+      3. Risk-adjusted scores (risk_adjusted)
+      4-7. Sector weights, liquidity cap, no-trade zone, constraint check
+           (position_builder) → written to portfolio_positions
+    """
+    end = pd.Timestamp.today() - pd.offsets.BMonthEnd(1)
+    start = end - pd.DateOffset(years=years)
+    rebalance_dates = pd.date_range(start=start, end=end, freq=pd.offsets.BMonthEnd())
+
+    port_cfg_raw = ctx.cfg.get("portfolio", {})
+
+    sel_config = SelectionConfig(
+        selection_threshold=port_cfg_raw.get("selection_threshold", 0.10),
+        buffer_exit_threshold=port_cfg_raw.get("buffer_exit_threshold", 0.20),
+        buffer_max_months=port_cfg_raw.get("buffer_max_months", 3),
+    )
+    ewma_config = EWMAConfig(
+        ewma_lambda=port_cfg_raw.get("ewma_lambda", 0.94),
+        lookback_days=port_cfg_raw.get("ewma_lookback_days", 252),
+    )
+    pos_config = PositionConfig(
+        aum=port_cfg_raw.get("aum", 1_000_000_000),
+        liquidity_cap_pct=port_cfg_raw.get("liquidity_cap_pct", 0.05),
+        no_trade_threshold=port_cfg_raw.get("no_trade_threshold", 0.005),
+        adv_lookback_days=port_cfg_raw.get("adv_lookback_days", 20),
+        constraint_tolerance=port_cfg_raw.get("constraint_tolerance", 0.02),
+    )
+
+    logger.info(
+        "Portfolio backfill: %d dates from %s to %s",
+        len(rebalance_dates),
+        rebalance_dates[0].date(),
+        rebalance_dates[-1].date(),
+    )
+
+    for i, ts in enumerate(rebalance_dates, 1):
+        rebalance_date = ts.date()
+        logger.info(
+            "[%d/%d] %s — portfolio construction",
+            i,
+            len(rebalance_dates),
+            rebalance_date,
+        )
+
+        # Step 1: stock selection with buffer zone
+        selected = run_stock_selection(
+            ctx.pg, rebalance_date, ctx.sector_map, sel_config
+        )
+        if selected.empty:
+            logger.warning("%s | no stocks selected — skipping", rebalance_date)
+            continue
+
+        # Step 2: EWMA volatility
+        symbols_selected = selected["symbol"].tolist()
+        ewma_vols = run_ewma_volatility(
+            ctx.pg, symbols_selected, rebalance_date, ewma_config
+        )
+
+        # Step 3: risk-adjusted scores
+        scored = compute_risk_adjusted_scores(selected, ewma_vols)
+        if scored.empty:
+            logger.warning("%s | no risk-adjusted scores — skipping", rebalance_date)
+            continue
+
+        # Steps 4-7: weights, liquidity cap, no-trade zone, constraints
+        positions = build_portfolio_positions(
+            ctx.pg, scored, rebalance_date, pos_config
+        )
+        if positions.empty:
+            continue
+
+        ctx.writer.write_portfolio_positions(positions)
+        logger.info(
+            "%s | wrote %d positions (%d long, %d short)",
+            rebalance_date,
+            len(positions),
+            (positions["direction"] == "long").sum(),
+            (positions["direction"] == "short").sum(),
+        )
+
+    logger.info("Portfolio construction backfill complete.")
+
+
 def main(argv=None):
     ctx = build_context()
     backfill_factor_metrics(ctx, years=5)
     backfill_composite_scores(ctx, years=5)
+    backfill_portfolio_positions(ctx, years=5)
 
 
 if __name__ == "__main__":

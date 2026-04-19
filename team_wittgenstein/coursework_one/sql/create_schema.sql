@@ -136,21 +136,21 @@ CREATE INDEX IF NOT EXISTS idx_factor_scores_date
     ON team_wittgenstein.factor_scores (score_date);
 
 
--- Portfolio positions output
--- Monthly rebalancing: 130% long top decile / 30% short bottom decile
+-- -- Portfolio positions output
+-- -- Monthly rebalancing: 130% long top decile / 30% short bottom decile
 
-DROP TABLE IF EXISTS team_wittgenstein.portfolio_positions CASCADE;
+-- DROP TABLE IF EXISTS team_wittgenstein.portfolio_positions CASCADE;
 
-CREATE TABLE team_wittgenstein.portfolio_positions (
-    position_id     INT             GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    rebalance_date  DATE            NOT NULL,
-    symbol          VARCHAR(12)     NOT NULL,
-    sector          VARCHAR(50),
-    direction       VARCHAR(5)      NOT NULL CHECK (direction IN ('long', 'short')),
-    weight          NUMERIC         NOT NULL,
-    created_at      TIMESTAMPTZ     DEFAULT NOW(),
-    UNIQUE (rebalance_date, symbol)
-);
+-- CREATE TABLE team_wittgenstein.portfolio_positions (
+--     position_id     INT             GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+--     rebalance_date  DATE            NOT NULL,
+--     symbol          VARCHAR(12)     NOT NULL,
+--     sector          VARCHAR(50),
+--     direction       VARCHAR(5)      NOT NULL CHECK (direction IN ('long', 'short')),
+--     weight          NUMERIC         NOT NULL,
+--     created_at      TIMESTAMPTZ     DEFAULT NOW(),
+--     UNIQUE (rebalance_date, symbol)
+-- );
 
-CREATE INDEX IF NOT EXISTS idx_portfolio_positions_date
-    ON team_wittgenstein.portfolio_positions (rebalance_date);
+-- CREATE INDEX IF NOT EXISTS idx_portfolio_positions_date
+--     ON team_wittgenstein.portfolio_positions (rebalance_date);

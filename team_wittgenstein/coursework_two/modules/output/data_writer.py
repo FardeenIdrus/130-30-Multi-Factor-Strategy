@@ -85,3 +85,26 @@ class DataWriter:
         )
         logger.info("Wrote %d z-score rows to %s.factor_zscores", len(df), SCHEMA)
         return len(df)
+
+    def write_portfolio_positions(self, df: pd.DataFrame) -> int:
+        """Write portfolio positions to portfolio_positions table.
+
+        Args:
+            df: DataFrame with rebalance_date, symbol, sector, direction,
+                ewma_vol, risk_adj_score, target_weight, final_weight,
+                liquidity_capped, trade_action.
+
+        Returns:
+            Number of rows attempted.
+        """
+        if df is None or df.empty:
+            logger.warning("No portfolio positions to write.")
+            return 0
+        self.pg.write_dataframe_on_conflict_do_nothing(
+            df=df,
+            table_name="portfolio_positions",
+            schema=SCHEMA,
+            conflict_columns=["rebalance_date", "symbol"],
+        )
+        logger.info("Wrote %d position rows to %s.portfolio_positions", len(df), SCHEMA)
+        return len(df)
