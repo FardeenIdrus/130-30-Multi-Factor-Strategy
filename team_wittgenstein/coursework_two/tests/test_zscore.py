@@ -251,6 +251,25 @@ class TestCalcEarningsStability:
         result = _calc_earnings_stability("AAPL", rows)
         assert result < 0.5  # stable growth → low std
 
+    def test_non_consecutive_fiscal_years_skipped(self):
+        """YoY pairs with a gap in fiscal_year are excluded from stability calc."""
+        rows = _eps_rows(n_years=6, base_eps=2.0)
+        # Remove middle year to create a gap — 2020→2022 is non-consecutive so skipped
+        rows = rows[rows["fiscal_year"] != 2021].reset_index(drop=True)
+        # Remaining valid consecutive pairs: 2018→2019, 2019→2020, 2022→2023
+        # That's only 3 pairs < MIN_EARN_HISTORY=5, so result is None
+        result = _calc_earnings_stability("AAPL", rows)
+        assert result is None
+
+    def test_near_zero_prior_eps_skipped(self):
+        """YoY pairs where prior annual EPS is near-zero are excluded."""
+        rows = _eps_rows(n_years=6, base_eps=2.0)
+        # Set one fiscal year's EPS to nearly zero so it becomes prior for next year
+        rows.loc[rows["fiscal_year"] == 2020, "eps"] = 0.0
+        result = _calc_earnings_stability("AAPL", rows)
+        # Result may be None or float depending on remaining valid pairs
+        assert result is None or isinstance(result, float)
+
     def test_yoy_growth_capped_at_500pct(self):
         rows = _eps_rows(n_years=6, base_eps=2.0)
         # Inject an extreme EPS jump

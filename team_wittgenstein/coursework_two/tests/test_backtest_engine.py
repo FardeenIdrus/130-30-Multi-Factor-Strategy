@@ -191,11 +191,11 @@ class TestComputeDriftAdjustedWeights:
 class TestComputeTurnover:
 
     def test_first_period_no_previous(self):
-        """First period: turnover = Σ final_weight (entering from zero)."""
+        """First period: turnover = 0 (treated as pre-invested, no entry cost)."""
         pos = _positions(["A", "B"], ["long", "short"], [1.30, 0.30])
         rets = _returns(["A", "B"], [0.05, 0.05])
         turnover = _compute_turnover(pos, None, rets)
-        assert pytest.approx(turnover, rel=1e-9) == 1.60
+        assert pytest.approx(turnover, abs=1e-9) == 0.0
 
     def test_identical_portfolio_after_drift(self):
         """If new weights exactly match drift-adjusted weights, turnover = 0."""
@@ -236,6 +236,16 @@ class TestComputeTurnover:
         # Without drift (naive): |0.55-0.50| + |0.45-0.50| = 0.10
         turnover_naive = abs(0.55 - 0.50) + abs(0.45 - 0.50)
         assert turnover_with_drift < turnover_naive
+
+    def test_direction_flip_counts_close_plus_open(self):
+        """Long→short flip: turnover = old_drift + new_weight, not |diff|."""
+        # long 5% → short 3% (zero returns so no drift)
+        prev = _positions(["A"], ["long"], [0.05])
+        rets = _returns(["A"], [0.0])
+        curr = _positions(["A"], ["short"], [0.03])
+        turnover = _compute_turnover(curr, prev, rets)
+        # close long 0.05 + open short 0.03 = 0.08, not |0.03 - 0.05| = 0.02
+        assert pytest.approx(turnover, rel=1e-9) == 0.08
 
     def test_spec_example(self):
         """Spec example: Turnover=7.9%, short=30% → trading cost=0.020%."""

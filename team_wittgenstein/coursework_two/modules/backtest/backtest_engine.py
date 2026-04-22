@@ -187,8 +187,8 @@ def _compute_turnover(
     w_curr = current.set_index("symbol")["final_weight"]
 
     if previous is None or previous.empty or stock_returns is None:
-        # First period: all positions entered from zero
-        return float(w_curr.sum())
+        # First period: treat as pre-invested — no entry cost
+        return 0.0
 
     w_drift = _compute_drift_adjusted_weights(previous, stock_returns)
 
@@ -196,7 +196,16 @@ def _compute_turnover(
     w_curr = w_curr.reindex(all_symbols, fill_value=0.0)
     w_drift = w_drift.reindex(all_symbols, fill_value=0.0)
 
-    return float((w_curr - w_drift).abs().sum())
+    # Direction lookup for flip detection
+    dir_curr = current.set_index("symbol")["direction"].reindex(all_symbols)
+    dir_prev = previous.set_index("symbol")["direction"].reindex(all_symbols)
+    flipped = (dir_curr != dir_prev) & dir_curr.notna() & dir_prev.notna()
+
+    # Flipped positions: close old (w_drift) + open new (w_curr) = sum not diff
+    turnover = (w_curr - w_drift).abs()
+    turnover[flipped] = w_drift[flipped] + w_curr[flipped]
+
+    return float(turnover.sum())
 
 
 def run_backtest(
@@ -215,14 +224,7 @@ def run_backtest(
     Returns:
         DataFrame written to backtest_returns (one row per month).
     """
-    # Step 1: benchmark keyed by (year, month) to handle business vs calendar month-end
-    logger.info("Step 1: Loading MSCI USA benchmark (EUSA)...")
-    _benchmark_raw = fetch_benchmark_monthly_returns(
-        date(2021, 1, 1), date(2026, 4, 30)
-    )
-    benchmark = {(d.year, d.month): v for d, v in _benchmark_raw.items()}
-
-    # Load positions
+    # Load positions first so we can derive the benchmark date range
     positions_df = _fetch_positions(db)
     if positions_df.empty:
         raise RuntimeError("portfolio_positions is empty — run backfill first.")
@@ -231,6 +233,15 @@ def run_backtest(
         positions_df["rebalance_date"]
     ).dt.date
     rebalance_dates = sorted(positions_df["rebalance_date"].unique().tolist())
+
+    # Step 1: benchmark keyed by (year, month) to handle business vs calendar month-end
+    bench_start = date(rebalance_dates[0].year, rebalance_dates[0].month, 1)
+    bench_end = rebalance_dates[-1]
+    logger.info(
+        "Step 1: Loading MSCI USA benchmark (EUSA) %s → %s...", bench_start, bench_end
+    )
+    _benchmark_raw = fetch_benchmark_monthly_returns(bench_start, bench_end)
+    benchmark = {(d.year, d.month): v for d, v in _benchmark_raw.items()}
     logger.info("Loaded positions for %d rebalance dates.", len(rebalance_dates))
 
     # Fetch prices at all rebalance dates in one query
@@ -247,10 +258,17 @@ def run_backtest(
         pos_t = positions_df[positions_df["rebalance_date"] == t]
 
         # Step 3: Gross return (t → t1)
-        price_t = price_grid.loc[t] if t in price_grid.index else pd.Series(dtype=float)
-        price_t1 = (
-            price_grid.loc[t1] if t1 in price_grid.index else pd.Series(dtype=float)
-        )
+        if t not in price_grid.index:
+            logger.warning("%s | no prices found — skipping period %s → %s", t, t, t1)
+            prev_positions = pos_t
+            continue
+        if t1 not in price_grid.index:
+            logger.warning("%s | no prices found — skipping period %s → %s", t1, t, t1)
+            prev_positions = pos_t
+            continue
+
+        price_t = price_grid.loc[t]
+        price_t1 = price_grid.loc[t1]
 
         stock_returns = _compute_stock_returns(pos_t, price_t, price_t1)
         gross, long_ret, short_ret = _compute_gross_return(pos_t, stock_returns)

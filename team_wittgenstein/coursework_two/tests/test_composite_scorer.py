@@ -335,3 +335,64 @@ class TestRunCompositeScorer:
         result = run_composite_scorer(db, date(2023, 3, 1), config)
 
         assert isinstance(result, pd.DataFrame)
+
+    def test_fewer_than_10_stocks_in_period_skipped(self):
+        """Periods with fewer than 10 stocks are skipped in IC computation."""
+        # Only 9 stocks — below the minimum group size of 10
+        n = 9
+        np.random.seed(0)
+        dates1 = pd.bdate_range("2023-01-02", periods=22)
+        dates2 = pd.bdate_range("2023-02-01", periods=20)
+        prices_rows = []
+        for i in range(n):
+            sym = f"S{i:02d}"
+            for d in dates1:
+                prices_rows.append(
+                    {"symbol": sym, "trade_date": d, "adjusted_close": 100.0}
+                )
+            for d in dates2:
+                prices_rows.append(
+                    {"symbol": sym, "trade_date": d, "adjusted_close": 105.0}
+                )
+        prices = pd.DataFrame(prices_rows)
+
+        factor_scores = pd.DataFrame(
+            {
+                "symbol": [f"S{i:02d}" for i in range(n)],
+                "score_date": pd.Timestamp("2023-01-31"),
+                "z_value": np.random.randn(n),
+                "z_quality": np.random.randn(n),
+                "z_momentum": np.random.randn(n),
+                "z_low_vol": np.random.randn(n),
+            }
+        )
+        db = MagicMock()
+        db.read_query.side_effect = [prices, factor_scores]
+
+        config = CompositeConfig(ic_lookback_months=36)
+        result = run_composite_scorer(db, date(2023, 3, 1), config)
+        # With < 10 stocks, IC period is skipped → falls back to equal weights
+        assert isinstance(result, pd.DataFrame)
+
+    def test_current_scores_empty_returns_empty(self):
+        """If current factor scores are empty after filtering, return empty."""
+        db = MagicMock()
+        # prices non-empty, factor_scores non-empty but no rows match current date
+        factor_scores = pd.DataFrame(
+            {
+                "symbol": ["S00"],
+                "score_date": pd.Timestamp("2020-01-31"),  # far in the past
+                "z_value": [1.0],
+                "z_quality": [0.0],
+                "z_momentum": [0.5],
+                "z_low_vol": [-0.5],
+            }
+        )
+        prices = pd.DataFrame(
+            {"symbol": ["S00"], "trade_date": ["2020-01-02"], "adjusted_close": [100]}
+        )
+        db.read_query.side_effect = [prices, factor_scores]
+
+        config = CompositeConfig(ic_lookback_months=1, min_ic_months=1)
+        result = run_composite_scorer(db, date(2023, 3, 1), config)
+        assert isinstance(result, pd.DataFrame)

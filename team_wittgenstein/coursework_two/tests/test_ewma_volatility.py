@@ -122,6 +122,19 @@ class TestComputeEwmaVol:
         result = compute_ewma_vol(prices)
         assert result.empty
 
+    def test_fewer_prices_than_seed_days_excluded(self):
+        """Stock with fewer log returns than seed_days is excluded from output."""
+        # seed_days default is 20; give only 5 prices → 4 log returns < 20
+        prices = pd.DataFrame(
+            {
+                "symbol": ["A"] * 5,
+                "trade_date": pd.bdate_range("2023-01-02", periods=5),
+                "adjusted_close": [100.0, 101.0, 102.0, 101.5, 103.0],
+            }
+        )
+        result = compute_ewma_vol(prices, seed_days=20)
+        assert result.empty
+
 
 # ---------------------------------------------------------------------------
 # run_ewma_volatility (orchestrator with mocked DB)

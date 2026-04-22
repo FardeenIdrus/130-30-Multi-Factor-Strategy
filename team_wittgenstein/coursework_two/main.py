@@ -165,7 +165,7 @@ def backfill_factor_metrics(ctx: PipelineContext, years: int = 5) -> None:
     """
     end = pd.Timestamp.today() - pd.offsets.BMonthEnd(1)
     rebalance_dates = pd.date_range(
-        end=end, periods=years * 12, freq=pd.offsets.BMonthEnd()
+        end=end, periods=years * 12 + 2, freq=pd.offsets.BMonthEnd()
     )
 
     logger.info(
@@ -257,7 +257,7 @@ def backfill_composite_scores(ctx: PipelineContext, years: int = 5) -> None:
     """
     end = pd.Timestamp.today() - pd.offsets.BMonthEnd(1)
     rebalance_dates = pd.date_range(
-        end=end, periods=years * 12, freq=pd.offsets.BMonthEnd()
+        end=end, periods=years * 12 + 2, freq=pd.offsets.BMonthEnd()
     )
 
     comp_cfg_raw = ctx.cfg.get("composite", {})
@@ -298,7 +298,7 @@ def backfill_portfolio_positions(ctx: PipelineContext, years: int = 5) -> None:
     """
     end = pd.Timestamp.today() - pd.offsets.BMonthEnd(1)
     rebalance_dates = pd.date_range(
-        end=end, periods=years * 12, freq=pd.offsets.BMonthEnd()
+        end=end, periods=years * 12 + 2, freq=pd.offsets.BMonthEnd()
     )
 
     port_cfg_raw = ctx.cfg.get("portfolio", {})

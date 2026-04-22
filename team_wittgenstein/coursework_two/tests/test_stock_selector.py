@@ -212,6 +212,53 @@ class TestApplySelectionRules:
         result = apply_selection_rules(ranked, previous, date(2024, 1, 31), config)
         assert result.iloc[0]["status"] == NOT_SELECTED
 
+    def test_short_hard_stop_sets_exit_reason(self):
+        """Short that moves outside buffer zone gets hard_stop exit reason."""
+        ranked = self._make_ranked(
+            {
+                "symbol": ["A"],
+                "percentile_rank": [0.50],  # mid-range, outside short buffer
+                "sector": ["Tech"],
+                "composite_score": [0.0],
+            }
+        )
+        previous = pd.DataFrame(
+            {
+                "symbol": ["A"],
+                "status": [SHORT_CORE],
+                "buffer_months_count": [0],
+                "entry_date": [date(2023, 12, 31)],
+            }
+        )
+        config = SelectionConfig()
+        result = apply_selection_rules(ranked, previous, date(2024, 1, 31), config)
+        row = result.iloc[0]
+        assert row["status"] == NOT_SELECTED
+        assert row["exit_reason"] == "hard_stop"
+
+    def test_short_buffer_timer_exit(self):
+        """Short in buffer for buffer_max_months gets timer_exit."""
+        ranked = self._make_ranked(
+            {
+                "symbol": ["A"],
+                "percentile_rank": [0.15],
+                "sector": ["Tech"],
+                "composite_score": [-1.0],
+            }
+        )
+        previous = pd.DataFrame(
+            {
+                "symbol": ["A"],
+                "status": [SHORT_BUFFER],
+                "buffer_months_count": [2],
+                "entry_date": [date(2023, 10, 31)],
+            }
+        )
+        config = SelectionConfig()
+        result = apply_selection_rules(ranked, previous, date(2024, 1, 31), config)
+        assert result.iloc[0]["status"] == NOT_SELECTED
+        assert result.iloc[0]["exit_reason"] == "timer_exit"
+
     def test_short_buffer_holds_existing(self):
         """Stock that was short_core and drifts to 15th pctile gets short_buffer."""
         ranked = self._make_ranked(
@@ -275,3 +322,35 @@ class TestRunStockSelection:
 
         result = run_stock_selection(db, date(2024, 2, 28), {}, SelectionConfig())
         assert result.empty
+
+    def test_previous_selection_empty_db_returns_empty_frame(self):
+        """fetch_previous_selection returns empty DataFrame when DB has no rows."""
+        from modules.portfolio.stock_selector import fetch_previous_selection
+
+        db = MagicMock()
+        db.read_query.return_value = pd.DataFrame()
+        result = fetch_previous_selection(db, date(2024, 1, 31))
+        assert result.empty
+        assert list(result.columns) == [
+            "symbol",
+            "status",
+            "buffer_months_count",
+            "entry_date",
+        ]
+
+    def test_previous_selection_non_empty_returned_as_is(self):
+        """fetch_previous_selection returns the DB result unchanged when non-empty."""
+        from modules.portfolio.stock_selector import fetch_previous_selection
+
+        db = MagicMock()
+        db.read_query.return_value = pd.DataFrame(
+            {
+                "symbol": ["A"],
+                "status": [LONG_CORE],
+                "buffer_months_count": [0],
+                "entry_date": [date(2023, 12, 31)],
+            }
+        )
+        result = fetch_previous_selection(db, date(2024, 1, 31))
+        assert len(result) == 1
+        assert result.iloc[0]["symbol"] == "A"

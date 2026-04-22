@@ -271,6 +271,67 @@ def _make_positions_df(n: int = 4) -> pd.DataFrame:
     )
 
 
+# ---------------------------------------------------------------------------
+# TestWriteBacktestReturns
+# ---------------------------------------------------------------------------
+
+
+def _make_backtest_returns_df(n: int = 3) -> pd.DataFrame:
+    from datetime import date
+
+    return pd.DataFrame(
+        {
+            "scenario_id": ["baseline"] * n,
+            "rebalance_date": [
+                date(2024, i + 1, 29 if i == 1 else 31) for i in range(n)
+            ],
+            "gross_return": [0.01, -0.02, 0.03][:n],
+            "net_return": [0.009, -0.021, 0.028][:n],
+            "long_return": [0.015, -0.01, 0.04][:n],
+            "short_return": [0.005, 0.01, 0.01][:n],
+            "benchmark_return": [0.005, -0.015, 0.02][:n],
+            "excess_return": [0.004, -0.006, 0.008][:n],
+            "cumulative_return": [0.009, -0.012, 0.016][:n],
+            "turnover": [0.5, 0.6, 0.7][:n],
+            "transaction_cost": [0.001, 0.0015, 0.002][:n],
+        }
+    )
+
+
+class TestWriteBacktestReturns:
+
+    def test_write_backtest_returns_empty(self):
+        writer, mock_pg = _make_writer()
+        result = writer.write_backtest_returns(pd.DataFrame(), "baseline")
+        assert result == 0
+        mock_pg.write_dataframe_on_conflict_do_nothing.assert_not_called()
+
+    def test_write_backtest_returns_none(self):
+        writer, mock_pg = _make_writer()
+        result = writer.write_backtest_returns(None, "baseline")
+        assert result == 0
+        mock_pg.write_dataframe_on_conflict_do_nothing.assert_not_called()
+
+    def test_write_backtest_returns_count(self):
+        writer, mock_pg = _make_writer()
+        n = 3
+        result = writer.write_backtest_returns(_make_backtest_returns_df(n), "baseline")
+        assert result == n
+
+    def test_write_backtest_returns_correct_table_and_conflict(self):
+        writer, mock_pg = _make_writer()
+        writer.write_backtest_returns(_make_backtest_returns_df(), "baseline")
+        kwargs = mock_pg.write_dataframe_on_conflict_do_nothing.call_args[1]
+        assert kwargs.get("table_name") == "backtest_returns"
+        assert kwargs.get("conflict_columns") == ["scenario_id", "rebalance_date"]
+
+    def test_write_backtest_returns_correct_schema(self):
+        writer, mock_pg = _make_writer()
+        writer.write_backtest_returns(_make_backtest_returns_df(), "baseline")
+        kwargs = mock_pg.write_dataframe_on_conflict_do_nothing.call_args[1]
+        assert kwargs.get("schema") == "team_wittgenstein"
+
+
 class TestWritePortfolioPositions:
 
     def test_write_portfolio_positions_empty(self):
