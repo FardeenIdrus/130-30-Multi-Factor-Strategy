@@ -5,6 +5,7 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
+from modules.backtest.backtest_engine import BacktestConfig, run_backtest
 from modules.composite.composite_scorer import CompositeConfig, run_composite_scorer
 from modules.db.db_connection import PostgresConnection
 from modules.liquidity.liquidity_filter import LiquidityConfig, run_liquidity_filter
@@ -163,8 +164,9 @@ def backfill_factor_metrics(ctx: PipelineContext, years: int = 5) -> None:
     will skip any dates already present in factor_metrics.
     """
     end = pd.Timestamp.today() - pd.offsets.BMonthEnd(1)
-    start = end - pd.DateOffset(years=years)
-    rebalance_dates = pd.date_range(start=start, end=end, freq=pd.offsets.BMonthEnd())
+    rebalance_dates = pd.date_range(
+        end=end, periods=years * 12, freq=pd.offsets.BMonthEnd()
+    )
 
     logger.info(
         "Backfill: %d rebalancing dates from %s to %s across %d symbols",
@@ -228,7 +230,9 @@ def backfill_factor_metrics(ctx: PipelineContext, years: int = 5) -> None:
     for col in numeric_cols:
         if col in combined.columns:
             combined[col] = pd.to_numeric(combined[col], errors="coerce")
-    logger.info("All dates computed (%d rows). Winsorising...", len(combined))
+    logger.info("All dates computed (%d rows). Writing raw metrics...", len(combined))
+    ctx.writer.write_factor_metrics(combined)
+    logger.info("Winsorising...")
     combined = winsorise_metrics(combined, ctx.sector_map)
     logger.info("Winsorisation complete. Computing factor scores...")
     combined, zscores = compute_factor_scores(combined, ctx.sector_map)
@@ -252,8 +256,9 @@ def backfill_composite_scores(ctx: PipelineContext, years: int = 5) -> None:
     scores back to factor_scores + persists IC weights to ic_weights table.
     """
     end = pd.Timestamp.today() - pd.offsets.BMonthEnd(1)
-    start = end - pd.DateOffset(years=years)
-    rebalance_dates = pd.date_range(start=start, end=end, freq=pd.offsets.BMonthEnd())
+    rebalance_dates = pd.date_range(
+        end=end, periods=years * 12, freq=pd.offsets.BMonthEnd()
+    )
 
     comp_cfg_raw = ctx.cfg.get("composite", {})
     comp_config = CompositeConfig(
@@ -292,8 +297,9 @@ def backfill_portfolio_positions(ctx: PipelineContext, years: int = 5) -> None:
            (position_builder) → written to portfolio_positions
     """
     end = pd.Timestamp.today() - pd.offsets.BMonthEnd(1)
-    start = end - pd.DateOffset(years=years)
-    rebalance_dates = pd.date_range(start=start, end=end, freq=pd.offsets.BMonthEnd())
+    rebalance_dates = pd.date_range(
+        end=end, periods=years * 12, freq=pd.offsets.BMonthEnd()
+    )
 
     port_cfg_raw = ctx.cfg.get("portfolio", {})
 
@@ -369,11 +375,28 @@ def backfill_portfolio_positions(ctx: PipelineContext, years: int = 5) -> None:
     logger.info("Portfolio construction backfill complete.")
 
 
+def run_baseline_backtest(ctx: PipelineContext) -> None:
+    """Steps 1-6: compute monthly returns and write to backtest_returns."""
+    config = BacktestConfig(
+        cost_bps=ctx.cfg.get("backtest", {}).get("cost_bps", 25.0),
+        borrow_rate=ctx.cfg.get("backtest", {}).get("borrow_rate", 0.0075),
+        scenario_id="baseline",
+    )
+    df = run_backtest(ctx.pg, config)
+    ctx.writer.write_backtest_returns(df, config.scenario_id)
+    logger.info(
+        "Backtest written: %d months | cumulative net return: %.4f",
+        len(df),
+        df["cumulative_return"].iloc[-1] if not df.empty else float("nan"),
+    )
+
+
 def main(argv=None):
     ctx = build_context()
     backfill_factor_metrics(ctx, years=5)
     backfill_composite_scores(ctx, years=5)
     backfill_portfolio_positions(ctx, years=5)
+    run_baseline_backtest(ctx)
 
 
 if __name__ == "__main__":

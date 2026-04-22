@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 FILING_LAG_DAYS = 45  # conservative look-ahead buffer for quarterly filings
 MIN_VOL_OBS_3M = 50  # min trading days for 3-month vol (window = 63)
 MIN_VOL_OBS_12M = 200  # min trading days for 12-month vol (window = 252)
-MIN_EARN_HISTORY = 5  # min valid YoY growth observations for earnings_stability
+MIN_EARN_HISTORY = 5  # min valid annual YoY growth observations for earnings_stability
 EPS_FLOOR = 0.01  # minimum |EPS| used as denominator in YoY growth
 YOY_GROWTH_CAP = 5.0  # cap individual YoY EPS growth at ±500%
 STALE_PRICE_DAYS = 5  # warn if latest price is more than N days before rebalancing
@@ -285,27 +285,32 @@ def _calc_leverage(symbol: str, total_debt, book_equity) -> float | None:
 def _calc_earnings_stability(symbol: str, eps_rows: pd.DataFrame) -> float | None:
     """
     earnings_stability = std(YoY EPS growth) over last 5 fiscal years.
+    Annual EPS per fiscal year = sum of quarterly EPS for that fiscal year.
     eps_rows must be sorted by report_date ASC with columns eps, fiscal_year,
     fiscal_quarter.
     """
     if eps_rows.empty:
         return _fallback(symbol, "earnings_stability", "no EPS history available")
 
-    # Build lookup keyed by (fiscal_year, fiscal_quarter) for q-4 comparison
-    eps_map: dict[tuple, float] = {
-        (int(r.fiscal_year), int(r.fiscal_quarter)): r.eps
-        for r in eps_rows.itertuples()
-        if not pd.isna(r.eps)
-    }
+    # Aggregate quarterly EPS to annual EPS per fiscal year
+    annual = (
+        eps_rows.dropna(subset=["eps"])
+        .groupby("fiscal_year", as_index=False)["eps"]
+        .sum()
+        .sort_values("fiscal_year")
+        .reset_index(drop=True)
+    )
 
     yoy_growths = []
-    for r in eps_rows.itertuples():
-        if pd.isna(r.eps):
-            continue
-        prior_eps = eps_map.get((int(r.fiscal_year) - 1, int(r.fiscal_quarter)))
-        if prior_eps is None or abs(float(prior_eps)) < EPS_FLOOR:
-            continue  # skip near-zero base to avoid division explosion
-        growth = (float(r.eps) - float(prior_eps)) / abs(float(prior_eps))
+    for i in range(1, len(annual)):
+        cur_yr = int(annual.loc[i, "fiscal_year"])
+        pri_yr = int(annual.loc[i - 1, "fiscal_year"])
+        if cur_yr - pri_yr != 1:
+            continue  # skip non-consecutive years
+        prior_eps = float(annual.loc[i - 1, "eps"])
+        if abs(prior_eps) < EPS_FLOOR:
+            continue  # avoid division by near-zero annual total
+        growth = (float(annual.loc[i, "eps"]) - prior_eps) / abs(prior_eps)
         # Cap individual YoY growth at ±500% before computing std
         growth = max(-YOY_GROWTH_CAP, min(YOY_GROWTH_CAP, growth))
         yoy_growths.append(growth)

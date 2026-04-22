@@ -132,6 +132,62 @@ class TestWriteFactorScores:
 
 
 # ---------------------------------------------------------------------------
+# TestWriteFactorMetrics
+# ---------------------------------------------------------------------------
+
+
+def _make_factor_metrics_df(n: int = 5) -> pd.DataFrame:
+    np.random.seed(1)
+    return pd.DataFrame(
+        {
+            "symbol": [f"S{i:02d}" for i in range(n)],
+            "calc_date": [date(2024, 1, 31)] * n,
+            "pb_ratio": np.random.standard_normal(n),
+            "asset_growth": np.random.standard_normal(n),
+            "roe": np.random.standard_normal(n),
+            "leverage": np.random.standard_normal(n),
+            "earnings_stability": np.random.standard_normal(n),
+            "momentum_6m": np.random.standard_normal(n),
+            "momentum_12m": np.random.standard_normal(n),
+            "volatility_3m": np.random.standard_normal(n),
+            "volatility_12m": np.random.standard_normal(n),
+        }
+    )
+
+
+class TestWriteFactorMetrics:
+
+    def test_write_factor_metrics_empty(self):
+        writer, mock_pg = _make_writer()
+        result = writer.write_factor_metrics(pd.DataFrame())
+        assert result == 0
+        mock_pg.write_dataframe_on_conflict_do_nothing.assert_not_called()
+
+    def test_write_factor_metrics_returns_count(self):
+        writer, mock_pg = _make_writer()
+        n = 6
+        result = writer.write_factor_metrics(_make_factor_metrics_df(n))
+        assert result == n
+
+    def test_write_factor_metrics_correct_table_and_conflict(self):
+        writer, mock_pg = _make_writer()
+        writer.write_factor_metrics(_make_factor_metrics_df(n=3))
+        kwargs = mock_pg.write_dataframe_on_conflict_do_nothing.call_args[1]
+        assert kwargs.get("table_name") == "factor_metrics"
+        assert kwargs.get("conflict_columns") == ["symbol", "calc_date"]
+
+    def test_write_factor_metrics_passes_df_unchanged(self):
+        writer, mock_pg = _make_writer()
+        df = _make_factor_metrics_df(n=4)
+        original_columns = list(df.columns)
+        writer.write_factor_metrics(df)
+        written_df = mock_pg.write_dataframe_on_conflict_do_nothing.call_args[1].get(
+            "df"
+        )
+        assert list(written_df.columns) == original_columns
+
+
+# ---------------------------------------------------------------------------
 # TestWriteFactorZscores
 # ---------------------------------------------------------------------------
 

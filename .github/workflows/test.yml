@@ -46,7 +46,7 @@ jobs:
         with:
           file: team_wittgenstein/coursework_one/coverage.xml
           token: ${{ secrets.CODECOV_TOKEN }}
-          flags: coursework_one
+          flags: team_wittgenstein
           fail_ci_if_error: false
 
   test-cw2:
@@ -87,7 +87,7 @@ jobs:
         with:
           file: team_wittgenstein/coursework_two/coverage.xml
           token: ${{ secrets.CODECOV_TOKEN }}
-          flags: coursework_two
+          flags: team_wittgenstein
           fail_ci_if_error: false
 
   security:

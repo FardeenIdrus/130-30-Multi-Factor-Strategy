@@ -63,6 +63,29 @@ class DataWriter:
         logger.info("Wrote %d factor score rows to %s.factor_scores", len(out), SCHEMA)
         return len(out)
 
+    def write_factor_metrics(self, df: pd.DataFrame) -> int:
+        """Write raw factor ratios to factor_metrics.
+
+        Args:
+            df: DataFrame with columns symbol, calc_date, pb_ratio,
+                asset_growth, roe, leverage, earnings_stability,
+                momentum_6m, momentum_12m, volatility_3m, volatility_12m.
+
+        Returns:
+            Number of rows attempted.
+        """
+        if df is None or df.empty:
+            logger.warning("No factor metrics to write.")
+            return 0
+        self.pg.write_dataframe_on_conflict_do_nothing(
+            df=df,
+            table_name="factor_metrics",
+            schema=SCHEMA,
+            conflict_columns=["symbol", "calc_date"],
+        )
+        logger.info("Wrote %d metric rows to %s.factor_metrics", len(df), SCHEMA)
+        return len(df)
+
     def write_factor_zscores(self, df: pd.DataFrame) -> int:
         """Write individual sub-metric z-scores to factor_zscores.
 
@@ -84,6 +107,33 @@ class DataWriter:
             conflict_columns=["symbol", "calc_date"],
         )
         logger.info("Wrote %d z-score rows to %s.factor_zscores", len(df), SCHEMA)
+        return len(df)
+
+    def write_backtest_returns(self, df: pd.DataFrame, scenario_id: str) -> int:
+        """Write monthly backtest returns to backtest_returns table.
+
+        Args:
+            df:          DataFrame with columns matching backtest_returns schema.
+            scenario_id: Scenario identifier (e.g. 'baseline').
+
+        Returns:
+            Number of rows attempted.
+        """
+        if df is None or df.empty:
+            logger.warning("No backtest returns to write.")
+            return 0
+        self.pg.write_dataframe_on_conflict_do_nothing(
+            df=df,
+            table_name="backtest_returns",
+            schema=SCHEMA,
+            conflict_columns=["scenario_id", "rebalance_date"],
+        )
+        logger.info(
+            "Wrote %d backtest return rows to %s.backtest_returns (scenario=%s)",
+            len(df),
+            SCHEMA,
+            scenario_id,
+        )
         return len(df)
 
     def write_portfolio_positions(self, df: pd.DataFrame) -> int:

@@ -104,3 +104,44 @@ CREATE INDEX IF NOT EXISTS idx_selection_status_date
     ON team_wittgenstein.selection_status (rebalance_date);
 CREATE INDEX IF NOT EXISTS idx_selection_status_symbol
     ON team_wittgenstein.selection_status (symbol);
+
+-- Monthly backtest returns per scenario
+CREATE TABLE IF NOT EXISTS team_wittgenstein.backtest_returns (
+    return_id           SERIAL PRIMARY KEY,
+    scenario_id         VARCHAR(50)     NOT NULL,
+    rebalance_date      DATE            NOT NULL,
+    gross_return        NUMERIC,
+    net_return          NUMERIC,
+    long_return         NUMERIC,
+    short_return        NUMERIC,
+    benchmark_return    NUMERIC,
+    excess_return       NUMERIC,
+    cumulative_return   NUMERIC,
+    turnover            NUMERIC,
+    transaction_cost    NUMERIC,
+    created_at          TIMESTAMPTZ     DEFAULT NOW(),
+    UNIQUE (scenario_id, rebalance_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_backtest_returns_scenario
+    ON team_wittgenstein.backtest_returns (scenario_id);
+CREATE INDEX IF NOT EXISTS idx_backtest_returns_date
+    ON team_wittgenstein.backtest_returns (rebalance_date);
+
+-- Aggregate backtest performance summary per scenario
+CREATE TABLE IF NOT EXISTS team_wittgenstein.backtest_summary (
+    summary_id              SERIAL PRIMARY KEY,
+    scenario_id             VARCHAR(50)     NOT NULL UNIQUE,
+    backtest_start          DATE            NOT NULL,
+    backtest_end            DATE            NOT NULL,
+    annualised_return       NUMERIC,
+    annualised_volatility   NUMERIC,
+    sharpe_ratio            NUMERIC,
+    information_ratio       NUMERIC,
+    max_drawdown            NUMERIC,
+    alpha                   NUMERIC,
+    avg_monthly_turnover    NUMERIC,
+    long_contribution       NUMERIC,
+    short_contribution      NUMERIC,
+    created_at              TIMESTAMPTZ     DEFAULT NOW()
+);
