@@ -243,7 +243,7 @@ class TestCalcEarningsStability:
         assert _calc_earnings_stability("AAPL", pd.DataFrame()) is None
 
     def test_insufficient_observations_returns_none(self):
-        rows = _eps_rows(n_years=1)  # only 1 fiscal year → 0 annual YoY < MIN_EARN_HISTORY=5
+        rows = _eps_rows(n_years=1)  # 1 fiscal year → 0 annual YoY < MIN_EARN_HISTORY=5
         assert _calc_earnings_stability("AAPL", rows) is None
 
     def test_stable_eps_has_low_std(self):

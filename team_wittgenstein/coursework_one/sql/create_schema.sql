@@ -73,67 +73,67 @@ CREATE TABLE team_wittgenstein.risk_free_rates (
     UNIQUE (country, rate_date)
 );
 
--- Raw calculated factor metrics (before normalisation)
--- Derived from prices + financials + risk-free rates
+-- -- Raw calculated factor metrics (before normalisation)
+-- -- Derived from prices + financials + risk-free rates
 
-DROP TABLE IF EXISTS team_wittgenstein.factor_metrics CASCADE;
+-- DROP TABLE IF EXISTS team_wittgenstein.factor_metrics CASCADE;
 
-CREATE TABLE team_wittgenstein.factor_metrics (
-    metric_id           INT             GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    symbol              VARCHAR(12)     NOT NULL,
-    calc_date           DATE            NOT NULL,
+-- CREATE TABLE team_wittgenstein.factor_metrics (
+--     metric_id           INT             GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+--     symbol              VARCHAR(12)     NOT NULL,
+--     calc_date           DATE            NOT NULL,
 
-    -- Value factor
-    pb_ratio            NUMERIC,
-    asset_growth        NUMERIC,
+--     -- Value factor
+--     pb_ratio            NUMERIC,
+--     asset_growth        NUMERIC,
 
-    -- Quality factor
-    roe                 NUMERIC,
-    leverage            NUMERIC,
-    earnings_stability  NUMERIC,
+--     -- Quality factor
+--     roe                 NUMERIC,
+--     leverage            NUMERIC,
+--     earnings_stability  NUMERIC,
 
-    -- Momentum factor
-    momentum_6m         NUMERIC,
-    momentum_12m        NUMERIC,
+--     -- Momentum factor
+--     momentum_6m         NUMERIC,
+--     momentum_12m        NUMERIC,
 
-    -- Low volatility factor
-    volatility_3m       NUMERIC,
-    volatility_12m      NUMERIC,
+--     -- Low volatility factor
+--     volatility_3m       NUMERIC,
+--     volatility_12m      NUMERIC,
 
-    created_at          TIMESTAMPTZ     DEFAULT NOW(),
-    UNIQUE (symbol, calc_date)
-);
+--     created_at          TIMESTAMPTZ     DEFAULT NOW(),
+--     UNIQUE (symbol, calc_date)
+-- );
 
-CREATE INDEX IF NOT EXISTS idx_factor_metrics_symbol
-    ON team_wittgenstein.factor_metrics (symbol);
+-- CREATE INDEX IF NOT EXISTS idx_factor_metrics_symbol
+--     ON team_wittgenstein.factor_metrics (symbol);
 
-CREATE INDEX IF NOT EXISTS idx_factor_metrics_date
-    ON team_wittgenstein.factor_metrics (calc_date);
+-- CREATE INDEX IF NOT EXISTS idx_factor_metrics_date
+--     ON team_wittgenstein.factor_metrics (calc_date);
 
 
--- Sector-normalised factor z-scores and composite score
--- Derived from factor_metrics after winsorisation and standardisation
+-- -- Sector-normalised factor z-scores and composite score
+-- -- Derived from factor_metrics after winsorisation and standardisation
 
-DROP TABLE IF EXISTS team_wittgenstein.factor_scores CASCADE;
+-- DROP TABLE IF EXISTS team_wittgenstein.factor_scores CASCADE;
 
-CREATE TABLE team_wittgenstein.factor_scores (
-    score_id        INT             GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    symbol          VARCHAR(12)     NOT NULL,
-    score_date      DATE            NOT NULL,
-    z_value         NUMERIC,
-    z_quality       NUMERIC,
-    z_momentum      NUMERIC,
-    z_low_vol       NUMERIC,
-    composite_score NUMERIC,
-    created_at      TIMESTAMPTZ     DEFAULT NOW(),
-    UNIQUE (symbol, score_date)
-);
+-- CREATE TABLE team_wittgenstein.factor_scores (
+--     score_id        INT             GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+--     symbol          VARCHAR(12)     NOT NULL,
+--     score_date      DATE            NOT NULL,
+--     z_value         NUMERIC,
+--     z_quality       NUMERIC,
+--     z_momentum      NUMERIC,
+--     z_low_vol       NUMERIC,
+--     composite_score NUMERIC,
+--     created_at      TIMESTAMPTZ     DEFAULT NOW(),
+--     UNIQUE (symbol, score_date)
+-- );
 
-CREATE INDEX IF NOT EXISTS idx_factor_scores_symbol
-    ON team_wittgenstein.factor_scores (symbol);
+-- CREATE INDEX IF NOT EXISTS idx_factor_scores_symbol
+--     ON team_wittgenstein.factor_scores (symbol);
 
-CREATE INDEX IF NOT EXISTS idx_factor_scores_date
-    ON team_wittgenstein.factor_scores (score_date);
+-- CREATE INDEX IF NOT EXISTS idx_factor_scores_date
+--     ON team_wittgenstein.factor_scores (score_date);
 
 
 -- -- Portfolio positions output

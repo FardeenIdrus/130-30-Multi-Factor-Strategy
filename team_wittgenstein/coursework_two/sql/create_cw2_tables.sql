@@ -1,6 +1,50 @@
 -- CW2 tables for the 130/30 multi-factor strategy
 -- Run against the 'fift' database
 
+-- Drop and recreate shared factor tables so every run starts fresh
+DROP TABLE IF EXISTS team_wittgenstein.factor_scores CASCADE;
+DROP TABLE IF EXISTS team_wittgenstein.factor_metrics CASCADE;
+
+CREATE TABLE team_wittgenstein.factor_metrics (
+    metric_id           INT             GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    symbol              VARCHAR(12)     NOT NULL,
+    calc_date           DATE            NOT NULL,
+    pb_ratio            NUMERIC,
+    asset_growth        NUMERIC,
+    roe                 NUMERIC,
+    leverage            NUMERIC,
+    earnings_stability  NUMERIC,
+    momentum_6m         NUMERIC,
+    momentum_12m        NUMERIC,
+    volatility_3m       NUMERIC,
+    volatility_12m      NUMERIC,
+    created_at          TIMESTAMPTZ     DEFAULT NOW(),
+    UNIQUE (symbol, calc_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_factor_metrics_symbol
+    ON team_wittgenstein.factor_metrics (symbol);
+CREATE INDEX IF NOT EXISTS idx_factor_metrics_date
+    ON team_wittgenstein.factor_metrics (calc_date);
+
+CREATE TABLE team_wittgenstein.factor_scores (
+    score_id        INT             GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    symbol          VARCHAR(12)     NOT NULL,
+    score_date      DATE            NOT NULL,
+    z_value         NUMERIC,
+    z_quality       NUMERIC,
+    z_momentum      NUMERIC,
+    z_low_vol       NUMERIC,
+    composite_score NUMERIC,
+    created_at      TIMESTAMPTZ     DEFAULT NOW(),
+    UNIQUE (symbol, score_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_factor_scores_symbol
+    ON team_wittgenstein.factor_scores (symbol);
+CREATE INDEX IF NOT EXISTS idx_factor_scores_date
+    ON team_wittgenstein.factor_scores (score_date);
+
 -- Drop old version if it exists (schema changed)
 DROP TABLE IF EXISTS team_wittgenstein.liquidity_metrics CASCADE;
 
@@ -106,7 +150,8 @@ CREATE INDEX IF NOT EXISTS idx_selection_status_symbol
     ON team_wittgenstein.selection_status (symbol);
 
 -- Monthly backtest returns per scenario
-CREATE TABLE IF NOT EXISTS team_wittgenstein.backtest_returns (
+DROP TABLE IF EXISTS team_wittgenstein.backtest_returns CASCADE;
+CREATE TABLE team_wittgenstein.backtest_returns (
     return_id           SERIAL PRIMARY KEY,
     scenario_id         VARCHAR(50)     NOT NULL,
     rebalance_date      DATE            NOT NULL,
@@ -129,7 +174,8 @@ CREATE INDEX IF NOT EXISTS idx_backtest_returns_date
     ON team_wittgenstein.backtest_returns (rebalance_date);
 
 -- Aggregate backtest performance summary per scenario
-CREATE TABLE IF NOT EXISTS team_wittgenstein.backtest_summary (
+DROP TABLE IF EXISTS team_wittgenstein.backtest_summary CASCADE;
+CREATE TABLE team_wittgenstein.backtest_summary (
     summary_id              SERIAL PRIMARY KEY,
     scenario_id             VARCHAR(50)     NOT NULL UNIQUE,
     backtest_start          DATE            NOT NULL,
