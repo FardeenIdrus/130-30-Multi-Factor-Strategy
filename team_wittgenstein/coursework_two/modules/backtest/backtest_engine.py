@@ -323,6 +323,10 @@ def run_backtest(
 
     df = pd.DataFrame(results)
 
+    if df.empty:
+        logger.warning("No backtest periods produced results")
+        return df
+
     # Cumulative net return
     df = df.sort_values("rebalance_date").reset_index(drop=True)
     df["cumulative_return"] = (1 + df["net_return"]).cumprod() - 1

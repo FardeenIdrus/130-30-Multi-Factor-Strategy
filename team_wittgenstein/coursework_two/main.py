@@ -9,6 +9,7 @@ from modules.backtest.backtest_engine import BacktestConfig, run_backtest
 from modules.backtest.benchmark import backfill_benchmark_returns
 from modules.composite.composite_scorer import CompositeConfig, run_composite_scorer
 from modules.db.db_connection import PostgresConnection
+from modules.evaluation.cost_sensitivity import run_cost_sensitivity
 from modules.evaluation.metrics import compute_summary_metrics
 from modules.liquidity.liquidity_filter import LiquidityConfig, run_liquidity_filter
 from modules.output.data_writer import DataWriter
@@ -105,8 +106,24 @@ def _load_universe(pg, cfg) -> tuple[list, list]:
     return symbols, countries
 
 
+def init_schema(pg: PostgresConnection) -> None:
+    """Drop and recreate all CW2 tables from sql/create_cw2_tables.sql.
+
+    Destructive: wipes backtest_returns, backtest_summary, factor_scores,
+    portfolio_positions, etc. Only call when starting a fresh full pipeline
+    run via main(). Do NOT call from build_context() or downstream helpers.
+    """
+    pg.execute_sql_file("sql/create_cw2_tables.sql")
+
+
 def build_context() -> PipelineContext:
-    """Set up all connections and infrastructure. Called once at startup."""
+    """Set up all connections and infrastructure. Called once at startup.
+
+    Does NOT create or drop tables - schema setup is done explicitly via
+    init_schema() at the start of main(). This keeps build_context() safe
+    to call from any sub-script (e.g. cost sensitivity, reporting) without
+    destroying baseline data.
+    """
     cfg = load_config()
     setup_logging(cfg.get("logging", {}).get("level", "INFO"))
 
@@ -122,8 +139,6 @@ def build_context() -> PipelineContext:
 
     if not pg.test_connection():
         raise RuntimeError("PostgreSQL connection failed.")
-
-    pg.execute_sql_file("sql/create_cw2_tables.sql")
 
     symbols, countries = _load_universe(pg, cfg)
 
@@ -426,13 +441,29 @@ def run_baseline_summary(ctx: PipelineContext) -> None:
     )
 
 
+def run_cost_sensitivity_scenarios(ctx: PipelineContext) -> None:
+    """Step 9: re-apply alternative cost assumptions to the baseline positions.
+
+    Creates 3 new scenarios (frictionless, low, high) and populates their
+    backtest_returns and backtest_summary rows. Baseline = moderate cost
+    is already in the DB.
+    """
+    created = run_cost_sensitivity(ctx.pg)
+    logger.info("Cost sensitivity complete: %d scenarios (%s)", len(created), created)
+
+
 def main(argv=None):
     ctx = build_context()
+    # Recreate the schema for a fresh full pipeline run. Sub-scripts that
+    # consume existing data (cost sensitivity, reporting, etc.) call
+    # build_context() directly without invoking init_schema.
+    init_schema(ctx.pg)
     backfill_factor_metrics(ctx, years=9)
     backfill_composite_scores(ctx, years=9)
     backfill_portfolio_positions(ctx, years=5)
     run_baseline_backtest(ctx)
     run_baseline_summary(ctx)
+    run_cost_sensitivity_scenarios(ctx)
 
 
 if __name__ == "__main__":
