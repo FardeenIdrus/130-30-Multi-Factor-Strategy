@@ -211,6 +211,7 @@ def _compute_turnover(
 def run_backtest(
     db: PostgresConnection,
     config: BacktestConfig,
+    positions_override: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Execute Steps 1-6 and return monthly backtest results.
 
@@ -221,11 +222,27 @@ def run_backtest(
         5. Net return = gross − cost.
         6. Excess return = net − benchmark.
 
+    Args:
+        db:                 Active PostgresConnection (used for prices +
+                            benchmark, plus positions when override absent).
+        config:             BacktestConfig with cost_bps, borrow_rate,
+                            scenario_id.
+        positions_override: If provided, use this DataFrame instead of
+                            reading portfolio_positions from the DB. Required
+                            for variant scenarios (factor exclusion, parameter
+                            sensitivity) where positions exist only in memory.
+                            Must include columns: rebalance_date, symbol,
+                            direction, final_weight.
+
     Returns:
         DataFrame written to backtest_returns (one row per month).
     """
-    # Load positions first so we can derive the benchmark date range
-    positions_df = _fetch_positions(db)
+    # Load positions (either from caller or from DB)
+    positions_df = (
+        positions_override.copy()
+        if positions_override is not None
+        else _fetch_positions(db)
+    )
     if positions_df.empty:
         raise RuntimeError("portfolio_positions is empty — run backfill first.")
 

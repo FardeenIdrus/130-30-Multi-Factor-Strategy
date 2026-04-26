@@ -157,21 +157,41 @@ def compute_monthly_ic(
     return pd.DataFrame(results)
 
 
-def compute_ic_weights(monthly_ics: pd.DataFrame) -> pd.DataFrame:
+def compute_ic_weights(
+    monthly_ics: pd.DataFrame,
+    excluded_factor: str | None = None,
+) -> pd.DataFrame:
     """Compute IC-derived factor weights with zero-flooring.
 
     Returns columns: factor_name, ic_mean_36m, ic_weight.
     Weights sum to 1.0. Negative mean ICs are floored to 0.
     If all factors have negative IC, falls back to equal weights.
+
+    Args:
+        monthly_ics:     Per-month IC values from compute_monthly_ic.
+        excluded_factor: If provided (one of FACTOR_NAMES), force that factor's
+                         weight to 0 and renormalise the others. Used by Step 10
+                         factor exclusion analysis.
     """
+    if excluded_factor is not None and excluded_factor not in FACTOR_NAMES:
+        raise ValueError(
+            f"excluded_factor must be one of {FACTOR_NAMES}, got '{excluded_factor}'"
+        )
+
     if monthly_ics.empty:
-        return pd.DataFrame(
+        result = pd.DataFrame(
             {
                 "factor_name": list(FACTOR_NAMES),
                 "ic_mean_36m": [0.0] * 4,
                 "ic_weight": [0.25] * 4,
             }
         )
+        if excluded_factor is not None:
+            mask = result["factor_name"] == excluded_factor
+            result.loc[mask, "ic_weight"] = 0.0
+            remaining = result.loc[~mask, "ic_weight"]
+            result.loc[~mask, "ic_weight"] = remaining / remaining.sum()
+        return result
 
     mean_ics = (
         monthly_ics.groupby("factor_name")["ic_value"]
@@ -184,10 +204,20 @@ def compute_ic_weights(monthly_ics: pd.DataFrame) -> pd.DataFrame:
     # Zero-flooring: negative ICs get weight 0
     mean_ics["ic_floored"] = mean_ics["ic_mean_36m"].clip(lower=0.0)
 
+    # Step 10 factor exclusion: zero out the excluded factor before renormalising
+    if excluded_factor is not None:
+        mean_ics.loc[mean_ics["factor_name"] == excluded_factor, "ic_floored"] = 0.0
+
     total = mean_ics["ic_floored"].sum()
     if total <= 0:
-        # All factors negative — fall back to equal weights
-        mean_ics["ic_weight"] = 0.25
+        # All factors negative — fall back to equal weights (excluding the
+        # excluded factor if one is set)
+        if excluded_factor is not None:
+            mean_ics["ic_weight"] = mean_ics["factor_name"].apply(
+                lambda f: 0.0 if f == excluded_factor else 1.0 / 3.0
+            )
+        else:
+            mean_ics["ic_weight"] = 0.25
     else:
         mean_ics["ic_weight"] = mean_ics["ic_floored"] / total
 
@@ -274,10 +304,26 @@ def run_composite_scorer(
     db: PostgresConnection,
     rebalance_date: date,
     config: CompositeConfig,
+    excluded_factor: str | None = None,
+    persist: bool = True,
 ) -> pd.DataFrame:
-    """Compute IC-weighted composite scores and persist IC weights.
+    """Compute IC-weighted composite scores and (optionally) persist them.
 
-    Returns DataFrame with symbol and composite_score for downstream use.
+    Args:
+        db:              PostgresConnection used for reading factor z-scores
+                         and prices. Writes are gated by `persist`.
+        rebalance_date:  Month-end date the composite score applies to.
+        config:          CompositeConfig with IC lookback and minimum months.
+        excluded_factor: If provided (one of FACTOR_NAMES), the named factor's
+                         IC weight is zeroed and remaining factors are
+                         renormalised. Used by Step 10 factor exclusion.
+        persist:         When True (default), writes ic_weights and updates
+                         factor_scores.composite_score in the DB. When False,
+                         skips DB writes - used by variant scenarios that
+                         must not pollute baseline data.
+
+    Returns:
+        DataFrame with symbol and composite_score for downstream use.
     """
     # Step 1: fetch data
     prices = _fetch_monthly_prices(db, rebalance_date, config.ic_lookback_months)
@@ -298,7 +344,7 @@ def run_composite_scorer(
     n_months = monthly_ics["month_end"].nunique() if not monthly_ics.empty else 0
     logger.info("Computed ICs over %d months (date=%s)", n_months, rebalance_date)
 
-    # Step 4: average ICs + zero-flooring + normalise
+    # Step 4: average ICs + zero-flooring + normalise (with optional exclusion)
     if n_months < config.min_ic_months:
         logger.warning(
             "Only %d months of IC data (min=%d), using equal weights (date=%s)",
@@ -306,15 +352,9 @@ def run_composite_scorer(
             config.min_ic_months,
             rebalance_date,
         )
-        ic_weights = pd.DataFrame(
-            {
-                "factor_name": list(FACTOR_NAMES),
-                "ic_mean_36m": [0.0] * 4,
-                "ic_weight": [0.25] * 4,
-            }
-        )
+        ic_weights = compute_ic_weights(pd.DataFrame(), excluded_factor=excluded_factor)
     else:
-        ic_weights = compute_ic_weights(monthly_ics)
+        ic_weights = compute_ic_weights(monthly_ics, excluded_factor=excluded_factor)
     for _, row in ic_weights.iterrows():
         logger.info(
             "  %s: mean_IC=%.4f, weight=%.3f",
@@ -333,16 +373,18 @@ def run_composite_scorer(
 
     composite = compute_composite_score(current_scores, ic_weights)
 
-    # Step 6: persist
-    _persist_ic_weights(db, ic_weights, rebalance_date)
-    _update_composite_scores(db, composite, current_scores["score_date"].max())
+    # Step 6: persist (only when explicitly requested)
+    if persist:
+        _persist_ic_weights(db, ic_weights, rebalance_date)
+        _update_composite_scores(db, composite, current_scores["score_date"].max())
 
     logger.info(
-        "Composite scores: %d stocks, range [%.3f, %.3f] (date=%s)",
+        "Composite scores: %d stocks, range [%.3f, %.3f] (date=%s, excluded=%s)",
         len(composite),
         composite["composite_score"].min(),
         composite["composite_score"].max(),
         rebalance_date,
+        excluded_factor or "none",
     )
 
     return composite

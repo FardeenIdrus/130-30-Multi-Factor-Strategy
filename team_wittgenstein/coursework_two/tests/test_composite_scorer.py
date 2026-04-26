@@ -10,6 +10,7 @@ from unittest.mock import MagicMock
 
 import numpy as np
 import pandas as pd
+import pytest
 from scipy.stats import spearmanr
 
 from modules.composite.composite_scorer import (
@@ -161,6 +162,62 @@ class TestComputeIcWeights:
         result = compute_ic_weights(pd.DataFrame())
         assert len(result) == 4
         assert all(abs(result["ic_weight"] - 0.25) < 1e-10)
+
+    def test_excluded_factor_zeroed_and_others_renormalised(self):
+        """Step 10: with excluded_factor='value', value gets weight 0; other 3
+        sum to 1.0 in proportion to their (floored) ICs."""
+        monthly_ics = pd.DataFrame(
+            {
+                "month_end": pd.Timestamp("2023-01-31"),
+                "factor_name": ["value", "quality", "momentum", "low_vol"],
+                "ic_value": [0.10, 0.03, 0.06, 0.01],
+            }
+        )
+        result = compute_ic_weights(monthly_ics, excluded_factor="value")
+
+        value_weight = result[result["factor_name"] == "value"]["ic_weight"].iloc[0]
+        assert value_weight == 0.0
+        # Remaining 3 weights must sum to 1
+        assert abs(result["ic_weight"].sum() - 1.0) < 1e-10
+        # Quality:Momentum:LowVol = 0.03:0.06:0.01 = 3:6:1, total 10
+        q = result[result["factor_name"] == "quality"]["ic_weight"].iloc[0]
+        m = result[result["factor_name"] == "momentum"]["ic_weight"].iloc[0]
+        lv = result[result["factor_name"] == "low_vol"]["ic_weight"].iloc[0]
+        assert abs(q - 0.3) < 1e-10
+        assert abs(m - 0.6) < 1e-10
+        assert abs(lv - 0.1) < 1e-10
+
+    def test_excluded_factor_with_all_negative_uses_equal_thirds(self):
+        """If every factor's IC is negative AND one is excluded, the remaining
+        three split 1.0 equally (1/3 each), excluded stays at 0."""
+        monthly_ics = pd.DataFrame(
+            {
+                "month_end": pd.Timestamp("2023-01-31"),
+                "factor_name": ["value", "quality", "momentum", "low_vol"],
+                "ic_value": [-0.05, -0.03, -0.08, -0.02],
+            }
+        )
+        result = compute_ic_weights(monthly_ics, excluded_factor="momentum")
+
+        mom = result[result["factor_name"] == "momentum"]["ic_weight"].iloc[0]
+        assert mom == 0.0
+        # Other three each get 1/3
+        for f in ("value", "quality", "low_vol"):
+            w = result[result["factor_name"] == f]["ic_weight"].iloc[0]
+            assert abs(w - 1.0 / 3.0) < 1e-10
+
+    def test_excluded_factor_with_empty_input(self):
+        """Empty input + excluded factor: excluded=0, others share 1.0 equally."""
+        result = compute_ic_weights(pd.DataFrame(), excluded_factor="quality")
+        assert len(result) == 4
+        q = result[result["factor_name"] == "quality"]["ic_weight"].iloc[0]
+        assert q == 0.0
+        assert abs(result["ic_weight"].sum() - 1.0) < 1e-10
+
+    def test_invalid_excluded_factor_raises(self):
+        """Unknown factor name should raise ValueError."""
+        with pytest.raises(ValueError, match="excluded_factor must be one of"):
+            compute_ic_weights(pd.DataFrame(), excluded_factor="bogus")
 
 
 # ---------------------------------------------------------------------------

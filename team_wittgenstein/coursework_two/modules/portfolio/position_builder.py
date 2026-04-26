@@ -423,16 +423,23 @@ def build_portfolio_positions(
     scored: pd.DataFrame,
     rebalance_date: date,
     config: PositionConfig,
+    prior_positions: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Run Steps 4-7 and return the final portfolio positions DataFrame.
 
     Args:
-        db:             Active database connection.
-        scored:         Output of compute_risk_adjusted_scores — must contain
-                        symbol, sector, direction, composite_score, ewma_vol,
-                        risk_adj_score.
-        rebalance_date: Month-end rebalancing date.
-        config:         PositionConfig instance.
+        db:              Active database connection (used for ADV lookup and,
+                         when prior_positions is None, previous-weights fetch).
+        scored:          Output of compute_risk_adjusted_scores - must contain
+                         symbol, sector, direction, composite_score, ewma_vol,
+                         risk_adj_score.
+        rebalance_date:  Month-end rebalancing date.
+        config:          PositionConfig instance.
+        prior_positions: If provided, use this DataFrame as the previous month's
+                         positions for the no-trade zone (columns: symbol,
+                         direction, final_weight). Required for variant scenarios
+                         (e.g. factor exclusion) so no-trade zone uses the
+                         variant's own history rather than baseline.
 
     Returns:
         DataFrame with rebalance_date, symbol, sector, direction, ewma_vol,
@@ -452,8 +459,12 @@ def build_portfolio_positions(
     adv = fetch_adv(db, symbols, rebalance_date, config.adv_lookback_days)
     df = apply_liquidity_cap(df, adv, config.aum, config.liquidity_cap_pct)
 
-    # Step 6
-    previous = fetch_previous_weights(db, rebalance_date)
+    # Step 6 - use prior_positions override if given, else fetch from DB
+    previous = (
+        prior_positions
+        if prior_positions is not None
+        else fetch_previous_weights(db, rebalance_date)
+    )
     df = apply_no_trade_zone(df, previous, config.no_trade_threshold)
 
     # Step 7

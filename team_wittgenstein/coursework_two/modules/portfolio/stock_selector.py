@@ -244,14 +244,40 @@ def run_stock_selection(
     rebalance_date: date,
     sector_map: dict,
     config: SelectionConfig,
+    composite_scores: pd.DataFrame | None = None,
+    prior_selection: pd.DataFrame | None = None,
+    persist: bool = True,
 ) -> pd.DataFrame:
     """Run full stock selection with buffer rules.
 
-    Returns DataFrame of selected stocks (long_core, long_buffer,
-    short_core, short_buffer) with their composite scores and sectors.
+    Args:
+        db:               PostgresConnection used for default composite/previous
+                          fetches when overrides aren't provided.
+        rebalance_date:   Month-end date.
+        sector_map:       symbol -> GICS sector mapping.
+        config:           SelectionConfig.
+        composite_scores: If provided, use this DataFrame (columns: symbol,
+                          composite_score) instead of fetching from DB. Used
+                          by variant scenarios that compute composites in-memory.
+        prior_selection:  If provided, use this DataFrame as the previous
+                          month's selection_status (columns: symbol, status,
+                          buffer_months_count, entry_date) instead of fetching
+                          from DB. Required for variant scenarios that need
+                          their own buffer history.
+        persist:          When True (default), writes the full selection to
+                          selection_status. When False, skips DB writes - used
+                          by variant scenarios.
+
+    Returns:
+        DataFrame of selected stocks (long_core, long_buffer, short_core,
+        short_buffer) with composite scores, sectors, and buffer state.
     """
-    # Fetch inputs
-    scores = fetch_composite_scores(db, rebalance_date)
+    # Fetch inputs (use overrides when provided)
+    scores = (
+        composite_scores
+        if composite_scores is not None
+        else fetch_composite_scores(db, rebalance_date)
+    )
     if scores.empty:
         logger.warning("No composite scores for %s", rebalance_date)
         return pd.DataFrame(
@@ -266,7 +292,11 @@ def run_stock_selection(
             ]
         )
 
-    previous = fetch_previous_selection(db, rebalance_date)
+    previous = (
+        prior_selection
+        if prior_selection is not None
+        else fetch_previous_selection(db, rebalance_date)
+    )
 
     # Rank within sectors
     ranked = compute_percentile_ranks(scores, sector_map)
@@ -274,8 +304,9 @@ def run_stock_selection(
     # Apply buffer rules
     selection = apply_selection_rules(ranked, previous, rebalance_date, config)
 
-    # Persist full selection (including not_selected for audit)
-    persist_selection_status(db, selection)
+    # Persist full selection (including not_selected for audit), gated by flag
+    if persist:
+        persist_selection_status(db, selection)
 
     # Filter to selected stocks only
     selected = selection[
