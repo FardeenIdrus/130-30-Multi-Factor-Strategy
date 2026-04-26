@@ -15,6 +15,7 @@ from modules.evaluation.factor_exclusion import (
     run_factor_exclusion,
 )
 from modules.evaluation.metrics import compute_summary_metrics
+from modules.evaluation.reporting import run_reporting
 from modules.evaluation.sensitivity import run_parameter_sensitivity
 from modules.liquidity.liquidity_filter import LiquidityConfig, run_liquidity_filter
 from modules.output.data_writer import DataWriter
@@ -541,6 +542,12 @@ def run_parameter_sensitivity_scenarios(ctx: PipelineContext) -> None:
     )
 
 
+def run_reporting_outputs(ctx: PipelineContext) -> None:
+    """Step 11: produce charts (PNG) and tables (CSV) for the report."""
+    output_dir = ctx.cfg.get("reporting", {}).get("output_dir", "reports")
+    run_reporting(ctx.pg, output_dir=output_dir)
+
+
 def main(argv=None):
     ctx = build_context()
     # Recreate the schema for a fresh full pipeline run. Sub-scripts that
@@ -555,6 +562,7 @@ def main(argv=None):
     run_cost_sensitivity_scenarios(ctx)
     run_factor_exclusion_scenarios(ctx)
     run_parameter_sensitivity_scenarios(ctx)
+    run_reporting_outputs(ctx)
 
 
 if __name__ == "__main__":

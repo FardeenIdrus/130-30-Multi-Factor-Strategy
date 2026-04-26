@@ -33,6 +33,9 @@ portfolio:
   adv_lookback_days: 20
   constraint_tolerance: 0.02
 
+reporting:
+  output_dir: "reports"
+
 # Dev mode: limit symbols to avoid long runtimes during development.
 # Set enabled: false for a full production run.
 dev:

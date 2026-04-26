@@ -43,3 +43,6 @@ team_wittgenstein/coursework_two/cw2_rerun.log
 team_wittgenstein/coursework_two/importantnote.txt
 team_wittgenstein/coursework_two/factor_exclusion_run.log
 team_wittgenstein/coursework_two/sensitivity_run.log
+
+# Reporting outputs (regenerable from DB)
+team_wittgenstein/coursework_two/reports/
