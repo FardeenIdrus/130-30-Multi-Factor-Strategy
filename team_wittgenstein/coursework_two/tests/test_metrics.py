@@ -283,6 +283,11 @@ class TestComputeSummaryMetrics:
             "alpha",
             "benchmark_return_ann",
             "benchmark_return_cum",
+            "benchmark_volatility",
+            "benchmark_max_drawdown",
+            "benchmark_sharpe",
+            "benchmark_sortino",
+            "benchmark_calmar",
             "avg_monthly_turnover",
             "long_contribution",
             "short_contribution",
@@ -336,3 +341,28 @@ class TestComputeSummaryMetrics:
         ann_vol = result["annualised_volatility"]
         expected_sharpe = (ann_ret - 0.04) / ann_vol
         assert abs(result["sharpe_ratio"] - expected_sharpe) < 1e-10
+
+    def test_benchmark_metrics_match_pure_functions(self, mock_returns_df):
+        """Benchmark metrics use the same pure functions as portfolio metrics."""
+        db = MagicMock()
+        db.read_query.return_value = mock_returns_df
+
+        with patch("modules.evaluation.metrics.DataWriter"):
+            result = compute_summary_metrics(db, "baseline", risk_free_rate=0.02)
+
+        bench = mock_returns_df["benchmark_return"]
+        expected_vol = bench.std(ddof=1) * np.sqrt(12)
+        assert abs(result["benchmark_volatility"] - expected_vol) < 1e-10
+
+        bench_cum = (1 + bench).cumprod()
+        expected_dd = ((bench_cum - bench_cum.cummax()) / bench_cum.cummax()).min()
+        assert abs(result["benchmark_max_drawdown"] - expected_dd) < 1e-10
+
+        # Sharpe = (bench_ann - rf) / bench_vol
+        bench_ann = result["benchmark_return_ann"]
+        expected_bench_sharpe = (bench_ann - 0.02) / expected_vol
+        assert abs(result["benchmark_sharpe"] - expected_bench_sharpe) < 1e-10
+
+        # Calmar = bench_ann / |bench_max_dd|
+        expected_bench_calmar = bench_ann / abs(expected_dd)
+        assert abs(result["benchmark_calmar"] - expected_bench_calmar) < 1e-10

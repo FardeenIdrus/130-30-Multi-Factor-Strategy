@@ -205,6 +205,14 @@ def compute_summary_metrics(
     calmar = calmar_ratio(ann_ret, max_dd)
     ir = information_ratio(alpha, te)
 
+    # Benchmark risk + risk-adjusted (same formulas applied to bench series)
+    bench_vol = annualised_volatility(bench)
+    bench_max_dd = max_drawdown(bench)
+    bench_down_dev = downside_deviation(bench, monthly_rf)
+    bench_sharpe = sharpe_ratio(bench_ann, risk_free_rate, bench_vol)
+    bench_sortino = sortino_ratio(bench_ann, risk_free_rate, bench_down_dev)
+    bench_calmar = calmar_ratio(bench_ann, bench_max_dd)
+
     # Trading
     avg_turnover = float(turnover.mean()) if not turnover.empty else 0.0
 
@@ -225,6 +233,11 @@ def compute_summary_metrics(
         "alpha": alpha,
         "benchmark_return_ann": bench_ann,
         "benchmark_return_cum": bench_cum,
+        "benchmark_volatility": bench_vol,
+        "benchmark_max_drawdown": bench_max_dd,
+        "benchmark_sharpe": bench_sharpe,
+        "benchmark_sortino": bench_sortino,
+        "benchmark_calmar": bench_calmar,
         "avg_monthly_turnover": avg_turnover,
         "long_contribution": long_contrib,
         "short_contribution": short_contrib,
