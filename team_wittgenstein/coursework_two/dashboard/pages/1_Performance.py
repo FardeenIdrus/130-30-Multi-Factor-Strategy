@@ -186,13 +186,13 @@ with eq_col:
     st.plotly_chart(
         ch.equity_curve(returns_filtered),
         config=ch.chart_config(f"{selected}_equity"),
-        use_container_width=True,
+        width='stretch',
     )
 with dd_col:
     st.plotly_chart(
         ch.drawdown(returns_filtered),
         config=ch.chart_config(f"{selected}_drawdown"),
-        use_container_width=True,
+        width='stretch',
     )
 
 
@@ -212,7 +212,7 @@ with c1:
     st.plotly_chart(
         ch.returns_histogram(returns_filtered),
         config=ch.chart_config(f"{selected}_histogram"),
-        use_container_width=True,
+        width='stretch',
     )
 with c2:
     st.markdown("**Monthly excess return vs benchmark**")
@@ -223,7 +223,7 @@ with c2:
     st.plotly_chart(
         ch.monthly_excess(returns_filtered),
         config=ch.chart_config(f"{selected}_excess"),
-        use_container_width=True,
+        width='stretch',
     )
 with c3:
     st.markdown("**Long vs Short cumulative contribution**")
@@ -234,7 +234,7 @@ with c3:
     st.plotly_chart(
         ch.long_short_contribution(returns_filtered),
         config=ch.chart_config(f"{selected}_contribution"),
-        use_container_width=True,
+        width='stretch',
     )
 
 st.caption(
@@ -257,7 +257,7 @@ section_header(
 st.plotly_chart(
     ch.rolling_sharpe(returns_filtered, window=12),
     config=ch.chart_config(f"{selected}_rolling_sharpe"),
-    use_container_width=True,
+    width='stretch',
 )
 
 
@@ -274,5 +274,5 @@ section_header(
 st.plotly_chart(
     ch.monthly_turnover(returns_filtered),
     config=ch.chart_config(f"{selected}_turnover"),
-    use_container_width=True,
+    width='stretch',
 )

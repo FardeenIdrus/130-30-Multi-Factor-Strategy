@@ -152,7 +152,7 @@ else:
     st.plotly_chart(
         ch.stock_price_with_markers(prices, position_history),
         config=ch.chart_config(f"{selected}_price"),
-        use_container_width=True,
+        width='stretch',
     )
 
 
@@ -172,7 +172,7 @@ else:
     st.plotly_chart(
         ch.stock_factor_zscores(factor_scores),
         config=ch.chart_config(f"{selected}_zscores"),
-        use_container_width=True,
+        width='stretch',
     )
 
 
@@ -191,21 +191,21 @@ else:
         st.plotly_chart(
             ch.stock_fundamental_line(factor_metrics, "roe", "ROE"),
             config=ch.chart_config(f"{selected}_roe"),
-            use_container_width=True,
+            width='stretch',
         )
     with fc[1]:
         st.markdown("**P/B ratio**")
         st.plotly_chart(
             ch.stock_fundamental_line(factor_metrics, "pb_ratio", "P/B"),
             config=ch.chart_config(f"{selected}_pb"),
-            use_container_width=True,
+            width='stretch',
         )
     with fc[2]:
         st.markdown("**Leverage (D/E)**")
         st.plotly_chart(
             ch.stock_fundamental_line(factor_metrics, "leverage", "D/E"),
             config=ch.chart_config(f"{selected}_lev"),
-            use_container_width=True,
+            width='stretch',
         )
     with fc[3]:
         st.markdown("**12-month volatility**")
@@ -214,7 +214,7 @@ else:
                 factor_metrics, "volatility_12m", "Vol (annualised)"
             ),
             config=ch.chart_config(f"{selected}_vol"),
-            use_container_width=True,
+            width='stretch',
         )
 
 
@@ -258,4 +258,4 @@ else:
         }
     )
 
-    st.dataframe(display, use_container_width=True, hide_index=True)
+    st.dataframe(display, width='stretch', hide_index=True)
