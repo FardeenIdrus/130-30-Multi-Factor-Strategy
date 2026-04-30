@@ -28,18 +28,20 @@ docker compose up -d
 gunzip -c team_wittgenstein/coursework_two/docker/seed/seed.sql.gz \
   | docker exec -i postgres_db_cw psql -U postgres -d fift
 
-# 3 — start Streamlit dashboard
+# 3 — install Python deps and launch the dashboard
 cd team_wittgenstein/coursework_two
-docker compose up --build
+poetry install
+poetry run streamlit run dashboard/Home.py
 # Open http://localhost:8501
 
-# 4 — teardown
-docker compose down
+# 4 — teardown (when done)
 cd /path/to/repo
 docker compose down
 ```
 
 The seed file (`docker/seed/seed.sql.gz`) is a snapshot of the `team_wittgenstein` schema after a full pipeline run. It contains all 23 backtest scenarios plus baseline factor scores, IC weights, and portfolio positions.
+
+**Note on data freshness:** the seed is a **frozen snapshot** taken when it was generated. The dashboard's latest rebalance date is whatever was in the database at that moment - it does not advance with calendar time. To see fresher data, run the **Full Pipeline** below, which fetches live data from the APIs.
 
 ## Full Pipeline (run from scratch)
 
@@ -60,20 +62,13 @@ cd ../coursework_two
 poetry install
 poetry run python main.py
 
-# 4 — start Streamlit dashboard
-docker compose up --build
+# 4 — launch the dashboard
+poetry run streamlit run dashboard/Home.py
 # Open http://localhost:8501
 
-# 5 — teardown
-docker compose down
+# 5 — teardown (when done)
 cd /path/to/repo
 docker compose down
-```
-
-After the CW2 pipeline finishes, you can also launch the dashboard locally without Docker:
-
-```bash
-poetry run streamlit run dashboard/Home.py
 ```
 
 ## Regenerating the seed
